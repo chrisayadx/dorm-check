@@ -1,238 +1,247 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
+import { SiteFrame, CampusGround } from './components/SiteFrame'
+import { DormCard, CardSkeleton } from './components/DormCard'
+import { Figure, UniversityMark, initialsOf } from './components/ui'
+import { summarize, groupByDorm } from '@/lib/ratings'
 
 type Dorm = {
   id: string
   name: string
   university: string
-  photo_url: string
-  avg_rating: number
+  photo_url: string | null
+  avg_rating: number | null
+  year_built: number | null
+  amenities: string[] | null
 }
 
 export default function HomePage() {
   const [dorms, setDorms] = useState<Dorm[]>([])
+  const [reviews, setReviews] = useState<{ dorm_id: string; rating: number }[]>([])
   const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    async function fetchDorms() {
-      const { data } = await supabase
-        .from('dorms')
-        .select('*')
-        .order('avg_rating', { ascending: false })
-        .limit(6)
+    async function load() {
+      const [{ data }, { data: reviewRows }] = await Promise.all([
+        supabase.from('dorms').select('*').order('avg_rating', { ascending: false }),
+        supabase.from('reviews').select('dorm_id, rating'),
+      ])
       if (data) setDorms(data)
+      setReviews(reviewRows ?? [])
+      setLoading(false)
     }
-    fetchDorms()
+    load()
   }, [])
 
-  const filtered = dorms.filter(
-    (d) =>
-      d.name.toLowerCase().includes(search.toLowerCase()) ||
-      d.university.toLowerCase().includes(search.toLowerCase())
+  const byDorm = useMemo(() => groupByDorm(reviews), [reviews])
+
+  const universities = useMemo(
+    () => [...new Set(dorms.map((d) => d.university))],
+    [dorms]
   )
+
+  const q = search.trim().toLowerCase()
+  const visible = q
+    ? dorms.filter(
+        (d) =>
+          d.name.toLowerCase().includes(q) || d.university.toLowerCase().includes(q)
+      )
+    : dorms
 
   return (
-    <main style={{ fontFamily: 'sans-serif', color: '#1a1a1a' }}>
-
-      {/* NAV */}
-      <nav style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: '1rem 2rem', borderBottom: '1px solid #e5e5e5'
-      }}>
-        <div style={{ fontSize: '18px', fontWeight: '600' }}>
-          Dorm<span style={{ color: '#4f46e5' }}>Check</span>
-        </div>
-        <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-          <Link href="/browse" style={{ fontSize: '14px', color: '#555', textDecoration: 'none' }}>Browse dorms</Link>
-          <Link href="/universities" style={{ fontSize: '14px', color: '#555', textDecoration: 'none' }}>Universities</Link>
-          <Link href="/submit">
-            <button style={primaryBtn}>Submit a dorm</button>
-          </Link>
-        </div>
-      </nav>
-
-      {/* HERO */}
-      <div style={{
-        textAlign: 'center', padding: '4rem 2rem 3rem',
-        maxWidth: '640px', margin: '0 auto'
-      }}>
-        <div style={{
-          display: 'inline-block', fontSize: '12px', color: '#4f46e5',
-          background: '#eef2ff', borderRadius: '99px',
-          padding: '4px 14px', marginBottom: '1.25rem',
-          border: '1px solid #c7d2fe'
-        }}>
-          Student-powered dorm reviews
-        </div>
-
-        <h1 style={{ fontSize: '36px', fontWeight: '600', lineHeight: '1.2', marginBottom: '1rem' }}>
-          Find your perfect dorm before move-in day
-        </h1>
-
-        <p style={{ fontSize: '16px', color: '#666', lineHeight: '1.7', marginBottom: '2rem' }}>
-          Real reviews from real students. Check ratings, amenities, photos,
-          and insider tips for dorms at universities across the country.
-        </p>
-
-        {/* SEARCH BAR */}
-        <div style={{ display: 'flex', gap: '8px', maxWidth: '480px', margin: '0 auto 1rem' }}>
-          <input
-            type="text"
-            placeholder="Search by dorm name or university…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+    <main>
+      {/* ---------- hero: the white frame over the campus ---------- */}
+      <section className="shell" style={{ paddingTop: 24 }}>
+        <SiteFrame media={<CampusGround />}>
+          <div
             style={{
-              flex: 1, padding: '0.65rem 1rem', borderRadius: '8px',
-              border: '1px solid #ccc', fontSize: '14px'
+              padding: '26px 32px 168px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              textAlign: 'center',
+              gap: 20,
             }}
-          />
-          <button style={primaryBtn}>Search</button>
-        </div>
-
-        <p style={{ fontSize: '13px', color: '#999' }}>
-          or <Link href="/browse" style={{ color: '#4f46e5', textDecoration: 'none' }}>browse all universities →</Link>
-        </p>
-      </div>
-
-      {/* STATS BAR */}
-      <div style={{
-        display: 'flex', justifyContent: 'center', gap: '4rem',
-        padding: '2rem', borderTop: '1px solid #e5e5e5', borderBottom: '1px solid #e5e5e5'
-      }}>
-        {[
-          { num: '1,200+', label: 'Dorms listed' },
-          { num: '8,400+', label: 'Student reviews' },
-          { num: '340+',   label: 'Universities' },
-        ].map((s) => (
-          <div key={s.label} style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '24px', fontWeight: '600' }}>{s.num}</div>
-            <div style={{ fontSize: '13px', color: '#888', marginTop: '2px' }}>{s.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* FEATURED DORMS */}
-      <div style={{ maxWidth: '900px', margin: '0 auto', padding: '3rem 2rem' }}>
-        <p style={{ fontSize: '12px', color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>
-          Featured
-        </p>
-        <h2 style={{ fontSize: '22px', fontWeight: '600', marginBottom: '1.5rem' }}>
-          Top-rated dorms this semester
-        </h2>
-
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-          gap: '16px'
-        }}>
-          {(search ? filtered : dorms).map((dorm) => (
-            <Link key={dorm.id} href={`/dorms/${dorm.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-              <div style={{
-                border: '1px solid #e5e5e5', borderRadius: '12px',
-                overflow: 'hidden', cursor: 'pointer', background: 'white'
-              }}>
-                {dorm.photo_url ? (
-                  <img
-                    src={dorm.photo_url}
-                    alt={dorm.name}
-                    style={{ width: '100%', height: '100px', objectFit: 'cover' }}
-                  />
-                ) : (
-                  <div style={{
-                    height: '100px', background: '#f5f5f5',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '32px'
-                  }}>🏠</div>
-                )}
-                <div style={{ padding: '0.75rem' }}>
-                  <div style={{ fontSize: '14px', fontWeight: '600' }}>{dorm.name}</div>
-                  <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>{dorm.university}</div>
-                  <div style={{ fontSize: '12px', color: '#888', marginTop: '6px' }}>
-                    <span style={{ color: '#f59e0b' }}>{'★'.repeat(Math.round(dorm.avg_rating || 0))}</span>
-                    {' '}{dorm.avg_rating ? `${dorm.avg_rating}/5` : 'No ratings yet'}
-                  </div>
-                </div>
+          >
+            {/* the universities already covered, arced over the skyline */}
+            {universities.length > 0 && (
+              <div className="hero-arc">
+                {universities.slice(0, 6).map((u, i, arr) => {
+                  const mid = (arr.length - 1) / 2
+                  const lift = Math.abs(i - mid) * 22
+                  return (
+                    <span key={u} title={u} style={{ transform: `translateY(${lift}px)` }}>
+                      <UniversityMark initials={initialsOf(u)} />
+                    </span>
+                  )
+                })}
               </div>
-            </Link>
-          ))}
+            )}
 
-          {dorms.length === 0 && (
-            <p style={{ color: '#aaa', gridColumn: '1/-1', textAlign: 'center', padding: '2rem' }}>
-              No dorms yet — be the first to submit one!
+            <h1 className="t-hero" style={{ maxWidth: '16ch' }}>
+              What is it actually like to live there?
+            </h1>
+
+            <p className="t-lead" style={{ maxWidth: '46ch', margin: 0 }}>
+              Room details, building facts, and reviews from students who already
+              spent a year in the place you are about to sign for.
             </p>
-          )}
+
+            <form
+              onSubmit={(e) => e.preventDefault()}
+              style={{
+                display: 'flex',
+                gap: 10,
+                width: '100%',
+                maxWidth: 480,
+                flexWrap: 'wrap',
+                justifyContent: 'center',
+              }}
+            >
+              <label htmlFor="dorm-search" style={{ position: 'absolute', left: -9999 }}>
+                Search dorms by name or university
+              </label>
+              <input
+                id="dorm-search"
+                className="input"
+                type="search"
+                placeholder="Search a dorm or a university"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                style={{ flex: '1 1 240px', width: 'auto', borderRadius: 'var(--r-pill)', padding: '14px 22px' }}
+              />
+              <button type="submit" className="btn btn-primary">
+                Find your dorm
+              </button>
+            </form>
+          </div>
+        </SiteFrame>
+      </section>
+
+      {/* ---------- what is actually in here ---------- */}
+      <section className="shell" style={{ paddingTop: 40 }}>
+        <div
+          className="card"
+          style={{
+            padding: '26px 32px',
+            display: 'flex',
+            gap: 48,
+            flexWrap: 'wrap',
+            alignItems: 'center',
+          }}
+        >
+          <Figure value={String(dorms.length)} label={dorms.length === 1 ? 'dorm listed' : 'dorms listed'} />
+          <Figure
+            value={String(reviews.length)}
+            label={reviews.length === 1 ? 'student review' : 'student reviews'}
+          />
+          <Figure
+            value={String(universities.length)}
+            label={universities.length === 1 ? 'university' : 'universities'}
+          />
+          <p className="t-body" style={{ flex: '1 1 260px', margin: 0, fontSize: 14 }}>
+            Early days. Every listing here was added by a student, so the fastest way
+            to make this useful for your campus is to add the building you live in.
+          </p>
         </div>
-      </div>
+      </section>
 
-      {/* FEATURES */}
-      <div style={{
-        maxWidth: '900px', margin: '0 auto', padding: '2rem 2rem 3rem',
-        borderTop: '1px solid #e5e5e5'
-      }}>
-        <p style={{ fontSize: '12px', color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>
-          What you get
-        </p>
-        <h2 style={{ fontSize: '22px', fontWeight: '600', marginBottom: '1.5rem' }}>
-          Everything you need to decide
-        </h2>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
-          {[
-            { icon: '⭐', title: 'Honest reviews', desc: 'Star ratings and written feedback from students who actually lived there.' },
-            { icon: 'ℹ️', title: 'Dorm facts', desc: 'Year built, amenities, floor count, and AC status — all in one place.' },
-            { icon: '📸', title: 'Real photos', desc: 'Student-uploaded photos, not stock images from the housing office.' },
-            { icon: '📤', title: 'Add your dorm', desc: "Don't see your building? Submit it and help future students." },
-          ].map((f) => (
-            <div key={f.title} style={{
-              background: '#f9f9f9', border: '1px solid #e5e5e5',
-              borderRadius: '12px', padding: '1.25rem'
-            }}>
-              <div style={{ fontSize: '20px', marginBottom: '0.75rem' }}>{f.icon}</div>
-              <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>{f.title}</div>
-              <div style={{ fontSize: '13px', color: '#666', lineHeight: '1.5' }}>{f.desc}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* BOTTOM CTA */}
-      <div style={{
-        textAlign: 'center', padding: '3rem 2rem',
-        borderTop: '1px solid #e5e5e5', background: '#f9f9f9'
-      }}>
-        <h2 style={{ fontSize: '22px', fontWeight: '600', marginBottom: '0.75rem' }}>
-          Know a dorm that's not listed?
-        </h2>
-        <p style={{ fontSize: '15px', color: '#666', marginBottom: '1.5rem' }}>
-          Help your fellow students by adding a dorm and leaving the first review.
-        </p>
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-          <Link href="/submit">
-            <button style={primaryBtn}>Submit a dorm</button>
+      {/* ---------- the dorms ---------- */}
+      <section className="shell" style={{ paddingTop: 56, paddingBottom: 24 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-end',
+            gap: 16,
+            flexWrap: 'wrap',
+            marginBottom: 22,
+          }}
+        >
+          <div>
+            <h2 className="t-section">
+              {q ? `Matching "${search.trim()}"` : 'Every dorm on DormCheck'}
+            </h2>
+            <p className="t-body" style={{ marginTop: 6, fontSize: 14 }}>
+              {q
+                ? `${visible.length} ${visible.length === 1 ? 'building' : 'buildings'}`
+                : 'Sorted by rating. Buildings without a student photo show an illustrated facade.'}
+            </p>
+          </div>
+          <Link href="/submit" className="btn btn-soft btn-sm">
+            Add a dorm
           </Link>
-          <Link href="/browse">
-            <button style={outlineBtn}>Browse all universities</button>
-          </Link>
         </div>
-      </div>
 
+        <div className="grid-auto">
+          {loading && Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)}
+
+          {!loading &&
+            visible.map((dorm) => (
+              <DormCard
+                key={dorm.id}
+                dorm={dorm}
+                rating={summarize(byDorm.get(dorm.id) ?? [], dorm.avg_rating).value}
+              />
+            ))}
+        </div>
+
+        {!loading && visible.length === 0 && (
+          <div
+            className="card"
+            style={{ padding: 40, textAlign: 'center', borderStyle: 'dashed', boxShadow: 'none' }}
+          >
+            <p className="t-card" style={{ marginBottom: 6 }}>
+              {q ? `Nothing here matches "${search.trim()}"` : 'No dorms yet'}
+            </p>
+            <p className="t-body" style={{ margin: '0 auto 18px' }}>
+              {q
+                ? 'Try the university name, or add the building yourself.'
+                : 'Add the first building and leave the first review.'}
+            </p>
+            <Link href="/submit" className="btn btn-primary">
+              Add a dorm
+            </Link>
+          </div>
+        )}
+      </section>
+
+      {/* ---------- closing ---------- */}
+      <section className="shell" style={{ paddingTop: 32, paddingBottom: 72 }}>
+        <div
+          className="card-tint"
+          style={{
+            padding: '40px 36px',
+            display: 'flex',
+            gap: 28,
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div style={{ flex: '1 1 320px' }}>
+            <h2 className="t-section" style={{ color: 'var(--blue-900)' }}>
+              Your building is missing
+            </h2>
+            <p className="t-body" style={{ marginTop: 8 }}>
+              It takes about a minute. Name, university, what the room had, and what
+              you wish you had known before you moved in.
+            </p>
+          </div>
+          <div className="row wrap" style={{ gap: 12 }}>
+            <Link href="/submit" className="btn btn-primary">
+              Add a dorm
+            </Link>
+            <Link href="/browse" className="btn btn-outline">
+              Browse by university
+            </Link>
+          </div>
+        </div>
+      </section>
     </main>
   )
-}
-
-const primaryBtn: React.CSSProperties = {
-  background: '#4f46e5', color: 'white',
-  border: 'none', borderRadius: '8px',
-  padding: '0.6rem 1.25rem', fontSize: '14px',
-  cursor: 'pointer', fontWeight: '500'
-}
-
-const outlineBtn: React.CSSProperties = {
-  background: 'transparent', color: '#1a1a1a',
-  border: '1px solid #ccc', borderRadius: '8px',
-  padding: '0.6rem 1.25rem', fontSize: '14px',
-  cursor: 'pointer'
 }
