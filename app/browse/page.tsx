@@ -12,20 +12,44 @@ export default function BrowsePage() {
   const [dorms, setDorms] = useState<DormSummary[]>([])
   const [reviews, setReviews] = useState<{ dorm_id: string; rating: number }[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [active, setActive] = useState<string | null>(null)
 
+  // reloadKey lets the retry button re-run this effect. The fetch is declared
+  // inside the effect so the mount pass never sets state synchronously.
+  const [reloadKey, setReloadKey] = useState(0)
+
   useEffect(() => {
+    let cancelled = false
     async function load() {
-      const [{ data }, { data: reviewRows }] = await Promise.all([
+      const [dormsRes, reviewsRes] = await Promise.all([
         supabase.from('dorms').select('*').order('avg_rating', { ascending: false }),
         supabase.from('reviews').select('dorm_id, rating'),
       ])
-      setDorms(data ?? [])
-      setReviews(reviewRows ?? [])
+      if (cancelled) return
+      // A failed request and an empty database look identical once the rows
+      // are gone, and "add the first dorm" is the wrong thing to say when the
+      // query never came back. Keep them apart.
+      if (dormsRes.error) {
+        setLoadFailed(true)
+        setLoading(false)
+        return
+      }
+      setDorms(dormsRes.data ?? [])
+      setReviews(reviewsRes.data ?? [])
       setLoading(false)
     }
     load()
-  }, [])
+    return () => {
+      cancelled = true
+    }
+  }, [reloadKey])
+
+  function retry() {
+    setLoading(true)
+    setLoadFailed(false)
+    setReloadKey((k) => k + 1)
+  }
 
   const byDorm = useMemo(() => groupByDorm(reviews), [reviews])
 
@@ -43,9 +67,9 @@ export default function BrowsePage() {
 
   return (
     <main>
-      <section className="shell" style={{ paddingTop: 24 }}>
+      <section>
         <SiteFrame media={<CampusGround seed="browse" />}>
-          <div style={{ padding: '30px 34px 104px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="hero-lead">
             <h1 className="t-hero" style={{ fontSize: 'clamp(28px, 3.6vw, 40px)', maxWidth: '18ch' }}>
               Every building, by campus
             </h1>
@@ -115,7 +139,25 @@ export default function BrowsePage() {
             </div>
           ))}
 
-        {!loading && dorms.length === 0 && (
+        {!loading && loadFailed && (
+          <div
+            className="card"
+            style={{ padding: 48, textAlign: 'center', borderStyle: 'dashed', boxShadow: 'none' }}
+          >
+            <p className="t-card" style={{ marginBottom: 6 }}>
+              The dorm list did not load
+            </p>
+            <p className="t-body" style={{ margin: '0 auto 18px' }}>
+              The database did not answer. Nothing is missing, it just could not be
+              fetched.
+            </p>
+            <button type="button" className="btn btn-primary" onClick={retry}>
+              Try again
+            </button>
+          </div>
+        )}
+
+        {!loading && !loadFailed && dorms.length === 0 && (
           <div
             className="card"
             style={{ padding: 48, textAlign: 'center', borderStyle: 'dashed', boxShadow: 'none' }}

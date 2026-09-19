@@ -23,19 +23,43 @@ export default function HomePage() {
   const [reviews, setReviews] = useState<{ dorm_id: string; rating: number }[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
+
+  // reloadKey lets the retry button re-run this effect. The fetch is declared
+  // inside the effect so the mount pass never sets state synchronously.
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
+    let cancelled = false
     async function load() {
-      const [{ data }, { data: reviewRows }] = await Promise.all([
+      const [dormsRes, reviewsRes] = await Promise.all([
         supabase.from('dorms').select('*').order('avg_rating', { ascending: false }),
         supabase.from('reviews').select('dorm_id, rating'),
       ])
-      if (data) setDorms(data)
-      setReviews(reviewRows ?? [])
+      if (cancelled) return
+      // A failed request and an empty database look identical once the rows
+      // are gone, and "add the first dorm" is the wrong thing to say when the
+      // query never came back. Keep them apart.
+      if (dormsRes.error) {
+        setLoadFailed(true)
+        setLoading(false)
+        return
+      }
+      setDorms(dormsRes.data ?? [])
+      setReviews(reviewsRes.data ?? [])
       setLoading(false)
     }
     load()
-  }, [])
+    return () => {
+      cancelled = true
+    }
+  }, [reloadKey])
+
+  function retry() {
+    setLoading(true)
+    setLoadFailed(false)
+    setReloadKey((k) => k + 1)
+  }
 
   const byDorm = useMemo(() => groupByDorm(reviews), [reviews])
 
@@ -55,18 +79,9 @@ export default function HomePage() {
   return (
     <main>
       {/* ---------- hero: the white frame over the campus ---------- */}
-      <section className="shell" style={{ paddingTop: 24 }}>
+      <section>
         <SiteFrame media={<CampusGround />}>
-          <div
-            style={{
-              padding: '26px 32px 168px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              textAlign: 'center',
-              gap: 20,
-            }}
-          >
+          <div className="hero-center">
             {/* the universities already covered, arced over the skyline */}
             {universities.length > 0 && (
               <div className="hero-arc">
@@ -124,28 +139,23 @@ export default function HomePage() {
 
       {/* ---------- what is actually in here ---------- */}
       <section className="shell" style={{ paddingTop: 40 }}>
-        <div
-          className="card"
-          style={{
-            padding: '26px 32px',
-            display: 'flex',
-            gap: 48,
-            flexWrap: 'wrap',
-            alignItems: 'center',
-          }}
-        >
-          <Figure value={String(dorms.length)} label={dorms.length === 1 ? 'dorm listed' : 'dorms listed'} />
+        <div className="card stat-row">
           <Figure
-            value={String(reviews.length)}
+            value={loadFailed ? '—' : String(dorms.length)}
+            label={dorms.length === 1 ? 'dorm listed' : 'dorms listed'}
+          />
+          <Figure
+            value={loadFailed ? '—' : String(reviews.length)}
             label={reviews.length === 1 ? 'student review' : 'student reviews'}
           />
           <Figure
-            value={String(universities.length)}
+            value={loadFailed ? '—' : String(universities.length)}
             label={universities.length === 1 ? 'university' : 'universities'}
           />
           <p className="t-body" style={{ flex: '1 1 260px', margin: 0, fontSize: 14 }}>
-            Early days. Every listing here was added by a student, so the fastest way
-            to make this useful for your campus is to add the building you live in.
+            {loadFailed
+              ? 'These counts are unavailable while the database is unreachable.'
+              : 'Early days. Every listing here was added by a student, so the fastest way to make this useful for your campus is to add the building you live in.'}
           </p>
         </div>
       </section>
@@ -190,7 +200,25 @@ export default function HomePage() {
             ))}
         </div>
 
-        {!loading && visible.length === 0 && (
+        {!loading && loadFailed && (
+          <div
+            className="card"
+            style={{ padding: 40, textAlign: 'center', borderStyle: 'dashed', boxShadow: 'none' }}
+          >
+            <p className="t-card" style={{ marginBottom: 6 }}>
+              The dorm list did not load
+            </p>
+            <p className="t-body" style={{ margin: '0 auto 18px' }}>
+              The database did not answer. Your connection or the server is the
+              likely cause, not your search.
+            </p>
+            <button type="button" className="btn btn-primary" onClick={retry}>
+              Try again
+            </button>
+          </div>
+        )}
+
+        {!loading && !loadFailed && visible.length === 0 && (
           <div
             className="card"
             style={{ padding: 40, textAlign: 'center', borderStyle: 'dashed', boxShadow: 'none' }}

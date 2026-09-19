@@ -115,7 +115,7 @@ export default function DormPage() {
 
   return (
     <main>
-      <section className="shell" style={{ paddingTop: 24 }}>
+      <section>
         <SiteFrame
           media={
             dorm.photo_url ? (
@@ -130,7 +130,7 @@ export default function DormPage() {
             </Link>
           }
         >
-          <div style={{ padding: '30px 34px 104px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div className="hero-lead">
             <div className="row wrap" style={{ gap: 12 }}>
               <UniversityMark initials={initialsOf(dorm.university)} size={40} />
               <div>
@@ -173,7 +173,7 @@ export default function DormPage() {
               style={{
                 display: 'grid',
                 gap: 12,
-                gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))',
               }}
             >
               <Fact label="Built" value={dorm.year_built ? String(dorm.year_built) : null} />

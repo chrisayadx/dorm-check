@@ -104,7 +104,7 @@ export default function SubmitDormPage() {
 
   return (
     <main>
-      <section className="shell" style={{ paddingTop: 24 }}>
+      <section>
         <SiteFrame
           media={<CampusGround seed="submit" />}
           action={
@@ -113,7 +113,7 @@ export default function SubmitDormPage() {
             </Link>
           }
         >
-          <div style={{ padding: '30px 34px 104px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="hero-lead">
             <h1 className="t-hero" style={{ fontSize: 'clamp(28px, 3.6vw, 40px)', maxWidth: '17ch' }}>
               Add the building you lived in
             </h1>
@@ -139,7 +139,7 @@ export default function SubmitDormPage() {
               style={{
                 display: 'grid',
                 gap: 16,
-                gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))',
                 marginTop: 12,
               }}
             >

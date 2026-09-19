@@ -4,14 +4,16 @@ import { Logo, NavLinks } from "./ui";
 /**
  * SiteFrame — the system's page shell, and the one bold move on every page.
  *
- * A photograph is the page ground. A white frame floats on it, and the content
- * panel is cut out of that frame so the white reads as structural lines rather
- * than background. Radii step 26 -> 22 -> 16 outward to inward.
+ * A photograph is the page ground, running the full width of the page. A white
+ * frame floats on it, inset from the edges, and the content panel is cut out of
+ * that frame so the white reads as structural lines rather than background.
  *
- * The panel carries its own copy of the ground, offset to line up with the
- * outer one and masked so the image fades in from the top edge. That is what
- * makes the photo look like it is passing *behind* the frame rather than being
- * pasted into two separate boxes.
+ * The panel holds a second copy of the image. The two copies have to read as
+ * one continuous photograph, which they do only because .ground-media and
+ * .panel-media give both the same width, the same centre, and the same bottom
+ * line, at natural aspect ratio. Never set width or height on the media element
+ * itself: inline styles beat those rules and the hero splits into two
+ * visibly different photos.
  */
 export function SiteFrame({
   media,
@@ -30,27 +32,29 @@ export function SiteFrame({
         {media}
       </div>
 
-      <div className="frame">
-        <div className="frame-bar">
-          <div className="row wrap" style={{ gap: 22 }}>
-            <Logo compact={compactNav} />
-            <nav className="row wrap frame-nav" style={{ gap: 20 }} aria-label="Primary">
-              <NavLinks size={13.5} />
-            </nav>
+      <div className="frame-wrap">
+        <div className="frame">
+          <div className="frame-bar">
+            <div className="row wrap" style={{ gap: 22 }}>
+              <Logo compact={compactNav} />
+              <nav className="row wrap frame-nav" style={{ gap: 20 }} aria-label="Primary">
+                <NavLinks size={13.5} />
+              </nav>
+            </div>
+            {action ?? (
+              <Link href="/submit" className="btn btn-outline btn-sm">
+                Add a dorm
+              </Link>
+            )}
           </div>
-          {action ?? (
-            <Link href="/submit" className="btn btn-outline btn-sm">
-              Add a dorm
-            </Link>
-          )}
-        </div>
 
-        <div className="panel">
-          <div className="panel-media" aria-hidden>
-            {media}
+          <div className="panel">
+            <div className="panel-media" aria-hidden>
+              {media}
+            </div>
+            <div className="panel-scrim" aria-hidden />
+            <div className="panel-content">{children}</div>
           </div>
-          <div className="panel-scrim" aria-hidden />
-          <div className="panel-content">{children}</div>
         </div>
       </div>
     </div>
@@ -83,7 +87,8 @@ function seeded(seed: number) {
  * expects. Three receding bands of buildings, drawn once and deterministically.
  *
  * To use a real photo instead: drop a wide image at public/campus.jpg and pass
- * <GroundPhoto src="/campus.jpg" /> as the `media` prop of SiteFrame.
+ * <GroundPhoto src="/campus.jpg" /> as the `media` prop of SiteFrame. Use a
+ * wide crop; it is laid out at its natural aspect and anchored to the bottom.
  */
 export function CampusGround({ seed = "dormcheck" }: { seed?: string }) {
   const rand = seeded(hashString(seed));
@@ -102,9 +107,9 @@ export function CampusGround({ seed = "dormcheck" }: { seed?: string }) {
   return (
     <svg
       viewBox="0 0 1200 500"
-      preserveAspectRatio="xMidYMax slice"
+      preserveAspectRatio="xMidYMax meet"
       aria-hidden
-      style={{ display: "block", width: "100%", height: "100%" }}
+      style={{ display: "block" }}
     >
       <defs>
         <linearGradient id={`${uid}-sky`} x1="0" y1="0" x2="0" y2="1">
@@ -243,7 +248,7 @@ export function GroundPhoto({ src, alt = "" }: { src: string; alt?: string }) {
     <img
       src={src}
       alt={alt}
-      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+      style={{ display: "block" }}
     />
   );
 }
