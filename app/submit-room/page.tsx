@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
 type Dorm = { id: string; name: string; university: string }
 
-export default function SubmitRoomPage() {
+function SubmitRoomForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const prefillDormId = searchParams.get('dorm_id') || ''
@@ -131,6 +131,14 @@ export default function SubmitRoomPage() {
 
       </div>
     </main>
+  )
+}
+
+export default function SubmitRoomPage() {
+  return (
+    <Suspense fallback={null}>
+      <SubmitRoomForm />
+    </Suspense>
   )
 }
 
