@@ -1,22 +1,32 @@
 {
   "Virginia Tech": {
-    "url": "https://upload.wikimedia.org/wikipedia/commons/b/b3/Burruss_Hall_-03-_%2812349548603%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
-    "credit": "Ben Schumin from Montgomery Village, Maryland, USA · CC BY-SA 2.0 · Burruss Hall [03] · https://commons.wikimedia.org/wiki/File:Burruss_Hall_-03-_(12349548603).jpg",
-    "source": "https://commons.wikimedia.org/wiki/File:Burruss_Hall_-03-_(12349548603).jpg"
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/59/Virginia_Tech_Burruss_Hall_from_Drillfield.JPG/1280px-Virginia_Tech_Burruss_Hall_from_Drillfield.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "credit": "Eric T Gunther · CC BY 3.0 · Wikimedia Commons",
+    "source": "https://commons.wikimedia.org/wiki/File:Virginia_Tech_Burruss_Hall_from_Drillfield.JPG"
   },
-  "University of Virginia": {
-    "url": "https://upload.wikimedia.org/wikipedia/commons/2/2c/Rotunda_-_University_of_Virginia.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
-    "credit": "Robert Emerson · CC BY-SA 3.0 · Own work · https://commons.wikimedia.org/wiki/File:Rotunda_-_University_of_Virginia.jpg",
-    "source": "https://commons.wikimedia.org/wiki/File:Rotunda_-_University_of_Virginia.jpg"
-  },
-  "UNC Chapel Hill": {
-    "url": "https://upload.wikimedia.org/wikipedia/commons/0/0c/UNC_campus_during_COVID-19.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
-    "credit": "Mx. Granger · CC0 · Own work · https://commons.wikimedia.org/wiki/File:UNC_campus_during_COVID-19.jpg",
-    "source": "https://commons.wikimedia.org/wiki/File:UNC_campus_during_COVID-19.jpg"
+  "Georgia Tech": {
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f4/Lettie_Pate_Whitehead_Evans_Administration_Building.jpg/1280px-Lettie_Pate_Whitehead_Evans_Administration_Building.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "credit": "Mistercontributer · CC BY-SA 3.0 · Wikimedia Commons",
+    "source": "https://commons.wikimedia.org/wiki/File:Lettie_Pate_Whitehead_Evans_Administration_Building.jpg"
   },
   "University of Michigan": {
-    "url": "https://upload.wikimedia.org/wikipedia/commons/8/88/University_of_Michigan_August_2013_034_%28North_Campus_Diag%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
-    "credit": "Michael Barera · CC BY-SA 4.0 · Own work · https://commons.wikimedia.org/wiki/File:University_of_Michigan_August_2013_034_(North_Campus_Diag).jpg",
-    "source": "https://commons.wikimedia.org/wiki/File:University_of_Michigan_August_2013_034_(North_Campus_Diag).jpg"
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/99/UniversityofMIchiganDiag.JPG/1280px-UniversityofMIchiganDiag.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "credit": "AndrewHorne · CC BY 3.0 · Wikimedia Commons",
+    "source": "https://commons.wikimedia.org/wiki/File:UniversityofMIchiganDiag.JPG"
+  },
+  "George Mason University": {
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b9/George_Mason_College%2C_Fairfax_campus%2C_1967%2C_aerial_photograph_looking_north.jpg/1280px-George_Mason_College%2C_Fairfax_campus%2C_1967%2C_aerial_photograph_looking_north.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "credit": "Blue Ridge Aerial Surveys · CC BY-SA 4.0 · Wikimedia Commons",
+    "source": "https://commons.wikimedia.org/wiki/File:George_Mason_College,_Fairfax_campus,_1967,_aerial_photograph_looking_north.jpg"
+  },
+  "University of Virginia": {
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4b/The_Rotunda_and_Lawn_University_of_Virginia_Charlottesville_VA_March_2011.jpg/1280px-The_Rotunda_and_Lawn_University_of_Virginia_Charlottesville_VA_March_2011.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "credit": "Phil Roeder · CC BY 2.0 · Wikimedia Commons",
+    "source": "https://commons.wikimedia.org/wiki/File:The_Rotunda_and_Lawn_University_of_Virginia_Charlottesville_VA_March_2011.jpg"
+  },
+  "UNC Chapel Hill": {
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/fe/2008-07-11_UNC-CH_Old_Well_in_the_sun.jpg/1280px-2008-07-11_UNC-CH_Old_Well_in_the_sun.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "credit": "Ildar Sagdejev (Specious) · CC BY-SA 4.0 · Wikimedia Commons",
+    "source": "https://commons.wikimedia.org/wiki/File:2008-07-11_UNC-CH_Old_Well_in_the_sun.jpg"
   }
 }

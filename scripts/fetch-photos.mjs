@@ -1,1258 +1,222 @@
-import { createClient } from '@supabase/supabase-js'
-import fs from 'node:fs/promises'
-import path from 'node:path'
+// Fetch campus photos (per university) and exterior dorm photos (per dorm)
+// from Wikimedia Commons.
+//
+// Run from the project root:
+//   npm install @supabase/supabase-js
+//   node --env-file=.env.local scripts/fetch-photos.mjs
+//
+// .env.local needs NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+// (service key: local use only, never commit it, never prefix it NEXT_PUBLIC_).
+//
+// One-time SQL first (Supabase SQL editor):
+//   alter table dorms add column if not exists photo_credit text;
+//   alter table dorms add column if not exists photo_source text;
+//
+// Every dorm ends up with a photo, no hand-editing needed. Order tried per dorm:
+//   1. Wikimedia Commons, strict name match      (photo_source = 'exact')
+//   2. Openverse, looser match, same campus only (photo_source = 'loose')
+//   3. The university's campus photo             (photo_source = 'campus')
+// Re-running retries 'loose' and 'campus' dorms; photos you set by hand are never touched.
 
-// ======================================================
-// ENVIRONMENT
-// ======================================================
+import { createClient } from "@supabase/supabase-js";
+import { mkdir, writeFile } from "node:fs/promises";
 
-const SUPABASE_URL =
-  process.env.NEXT_PUBLIC_SUPABASE_URL
+const UA = { "User-Agent": "DormCheck/1.0 (replace-with-your-email@example.com)" };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const SUPABASE_SERVICE_ROLE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY
+// Keys must match the `university` column in your dorms table EXACTLY.
+// Check yours with:  select distinct university from dorms;
+// `pattern` is used to reject photos that aren't actually from that campus.
+const UNIVERSITIES = {
+  "University of Virginia": {
+    pattern: /university of virginia|rotunda|charlottesville/i,
+    queries: ["University of Virginia Rotunda", "University of Virginia Lawn", "University of Virginia campus"],
+  },
+  "George Mason University": {
+    pattern: /george mason|fairfax/i,
+    queries: ["George Mason University Fairfax campus", "George Mason University Johnson Center", "George Mason University"],
+  },
+  "Virginia Tech": {
+    pattern: /virginia tech|blacksburg|hokie/i,
+    queries: ["Virginia Tech Burruss Hall", "Virginia Tech Drillfield", "Virginia Tech campus"],
+  },
+  "UNC Chapel Hill": {
+    pattern: /north carolina|chapel hill|unc/i,
+    queries: ["Old Well University of North Carolina", "UNC Chapel Hill Wilson Library", "UNC Chapel Hill campus"],
+  },
+  "Georgia Tech": {
+    pattern: /georgia tech|georgia institute/i,
+    queries: ["Georgia Tech Tech Tower", "Georgia Tech campus", "Georgia Institute of Technology"],
+  },
+  "University of Michigan": {
+    pattern: /michigan|ann arbor/i,
+    queries: ["University of Michigan Diag", "Burton Memorial Tower", "University of Michigan campus"],
+  },
+};
 
-if (!SUPABASE_URL) {
-  throw new Error(
-    'Missing NEXT_PUBLIC_SUPABASE_URL in .env.local'
-  )
+// Skip logos, maps, floor plans, interiors, etc. We want the outside of buildings.
+const BAD_TITLE = /logo|seal|map|floor ?plan|diagram|interior|room|lobby|icon|flag|banner/i;
+const STOP = new Set(["hall", "house", "tower", "the", "of", "north", "south", "east", "west", "residence", "halls", "dormitory"]);
+
+async function commons(query, { pattern, tokens = [] }) {
+  const url =
+    "https://commons.wikimedia.org/w/api.php?" +
+    new URLSearchParams({
+      action: "query",
+      format: "json",
+      generator: "search",
+      gsrsearch: query,
+      gsrnamespace: "6", // File: namespace
+      gsrlimit: "10",
+      prop: "imageinfo",
+      iiprop: "url|size|mime|extmetadata",
+      iiurlwidth: "1000",
+    });
+
+  const res = await fetch(url, { headers: UA });
+  if (!res.ok) return null;
+  const json = await res.json();
+  const pages = Object.values(json?.query?.pages ?? {}).sort(
+    (a, b) => (a.index ?? 0) - (b.index ?? 0)
+  );
+
+  for (const p of pages) {
+    const info = p.imageinfo?.[0];
+    if (!info?.thumburl || info.mime !== "image/jpeg" || (info.width ?? 0) < 1200) continue;
+    if (BAD_TITLE.test(p.title)) continue;
+
+    const meta = info.extmetadata ?? {};
+    const haystack = [p.title, meta.ImageDescription?.value, meta.Categories?.value]
+      .join(" ")
+      .toLowerCase();
+
+    if (pattern && !pattern.test(haystack)) continue;
+    if (!tokens.every((t) => haystack.includes(t))) continue;
+
+    const artist = (meta.Artist?.value ?? "").replace(/<[^>]+>/g, "").trim();
+    const license = meta.LicenseShortName?.value ?? "";
+    return {
+      url: info.thumburl,
+      credit: [artist, license, "Wikimedia Commons"].filter(Boolean).join(" · "),
+      source: info.descriptionurl,
+    };
+  }
+  return null;
 }
 
-if (!SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error(
-    'Missing SUPABASE_SERVICE_ROLE_KEY in .env.local'
-  )
+// Looser search over Creative Commons photos (Flickr, etc.). Results can be a different
+// building at the right campus, which is fine here; the campus check keeps them on-topic.
+async function openverse(query, pattern) {
+  const url =
+    "https://api.openverse.org/v1/images/?" +
+    new URLSearchParams({ q: query, page_size: "15", category: "photograph" });
+  const res = await fetch(url, { headers: UA });
+  if (!res.ok) return null;
+  const json = await res.json();
+  for (const r of json.results ?? []) {
+    const text = [r.title, ...(r.tags ?? []).map((t) => t.name)].join(" ");
+    if (pattern && !pattern.test(text)) continue;
+    const src = r.thumbnail ?? r.url; // thumbnail is served by Openverse, so no hotlink blocking
+    if (!src) continue;
+    return {
+      url: src,
+      credit: [r.creator, (r.license ?? "").toUpperCase(), r.source].filter(Boolean).join(" · "),
+    };
+  }
+  return null;
 }
 
 const supabase = createClient(
-  SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY
-)
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
-// ======================================================
-// SETTINGS
-// ======================================================
+const { data: dorms, error } = await supabase
+  .from("dorms")
+  .select("id, name, university, photo_url, photo_source");
+if (error) throw error;
 
-const WIKIMEDIA_API =
-  'https://commons.wikimedia.org/w/api.php'
+// ---------- 1) One campus photo per university ----------
+const universityPhotos = {};
+const names = [...new Set((dorms ?? []).map((d) => d.university).filter(Boolean))];
 
-const REQUEST_DELAY_MS = 900
-
-const MIN_IMAGE_WIDTH = 1200
-
-const OUTPUT_FILE = path.join(
-  process.cwd(),
-  'lib',
-  'university-photos.json'
-)
-
-// ======================================================
-// UNIVERSITIES
-//
-// These names MUST match public.dorms.university exactly.
-// ======================================================
-
-const UNIVERSITIES = {
-  'Virginia Tech': {
-    aliases: [
-      'Virginia Tech',
-      'Virginia Polytechnic Institute and State University',
-      'VPI',
-      'Blacksburg',
-    ],
-
-    campusSearches: [
-      'Virginia Tech Burruss Hall',
-      'Virginia Tech Drillfield',
-      'Virginia Tech campus Blacksburg',
-    ],
-  },
-
-  'University of Virginia': {
-    aliases: [
-      'University of Virginia',
-      'UVA',
-      'Charlottesville',
-    ],
-
-    campusSearches: [
-      'University of Virginia Rotunda',
-      'University of Virginia Lawn',
-      'University of Virginia campus Charlottesville',
-    ],
-  },
-
-  'UNC Chapel Hill': {
-    aliases: [
-      'UNC Chapel Hill',
-      'University of North Carolina at Chapel Hill',
-      'University of North Carolina Chapel Hill',
-      'Chapel Hill',
-    ],
-
-    campusSearches: [
-      'UNC Chapel Hill Old Well',
-      'University of North Carolina Chapel Hill campus',
-      'UNC Chapel Hill campus',
-    ],
-  },
-
-  'University of Michigan': {
-    aliases: [
-      'University of Michigan',
-      'UMich',
-      'Michigan',
-      'Ann Arbor',
-    ],
-
-    campusSearches: [
-      'University of Michigan Diag',
-      'University of Michigan Ann Arbor campus',
-      'University of Michigan campus',
-    ],
-  },
-
-  'Georgia Tech': {
-    aliases: [
-      'Georgia Tech',
-      'Georgia Institute of Technology',
-      'Atlanta',
-    ],
-
-    campusSearches: [
-      'Georgia Tech Tech Tower',
-      'Georgia Institute of Technology campus',
-      'Georgia Tech Atlanta campus',
-    ],
-  },
-
-  'George Mason University': {
-    aliases: [
-      'George Mason University',
-      'George Mason',
-      'GMU',
-      'Fairfax',
-    ],
-
-    campusSearches: [
-      'George Mason University Fairfax campus',
-      'George Mason University campus',
-    ],
-  },
-}
-
-// ======================================================
-// WORDS THAT USUALLY MEAN "DO NOT USE THIS IMAGE"
-// ======================================================
-
-const REJECT_TERMS = [
-  'logo',
-  'seal',
-  'crest',
-  'wordmark',
-  'emblem',
-  'flag',
-
-  'map',
-  'diagram',
-  'floor plan',
-  'floorplan',
-  'site plan',
-  'blueprint',
-
-  'interior',
-  'inside',
-  'bedroom',
-  'bathroom',
-  'hallway',
-  'corridor',
-  'lounge',
-  'kitchen',
-  'room interior',
-
-  'drawing',
-  'illustration',
-  'rendering',
-  'render',
-  'sketch',
-]
-
-// ======================================================
-// HELPERS
-// ======================================================
-
-function sleep(ms) {
-  return new Promise((resolve) =>
-    setTimeout(resolve, ms)
-  )
-}
-
-function stripHtml(value = '') {
-  return String(value)
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function normalize(value = '') {
-  return stripHtml(value)
-    .toLowerCase()
-    .replace(/[’‘]/g, "'")
-    .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function compact(value = '') {
-  return normalize(value)
-    .replace(/\s+/g, '')
-}
-
-function firstWords(value = '') {
-  return normalize(value)
-    .split(' ')
-    .filter(
-      (word) =>
-        word.length >= 3 &&
-        ![
-          'hall',
-          'dorm',
-          'dormitory',
-          'residence',
-          'residential',
-          'building',
-          'house',
-          'the',
-          'and',
-          'east',
-          'west',
-          'north',
-          'south',
-          'main',
-        ].includes(word)
-    )
-}
-
-function getMetadata(
-  image,
-  field
-) {
-  return stripHtml(
-    image?.imageinfo?.[0]?.extmetadata?.[
-      field
-    ]?.value ?? ''
-  )
-}
-
-function getCategories(image) {
-  return (
-    image?.categories
-      ?.map((category) =>
-        category.title.replace(
-          /^Category:/,
-          ''
-        )
-      )
-      .join(' ') ?? ''
-  )
-}
-
-function getSearchableText(image) {
-  return [
-    image.title,
-    getMetadata(
-      image,
-      'ObjectName'
-    ),
-    getMetadata(
-      image,
-      'ImageDescription'
-    ),
-    getMetadata(
-      image,
-      'Categories'
-    ),
-    getCategories(image),
-  ]
-    .filter(Boolean)
-    .join(' ')
-}
-
-function isRejectedImage(image) {
-  const info =
-    image.imageinfo?.[0]
-
-  if (!info) {
-    return true
+for (const name of names) {
+  const cfg = UNIVERSITIES[name];
+  if (!cfg) {
+    console.warn(`No config for "${name}". Add it to UNIVERSITIES (name must match exactly).`);
+    continue;
   }
-
-  const width =
-    Number(info.width ?? 0)
-
-  if (width < MIN_IMAGE_WIDTH) {
-    return true
-  }
-
-  const mime =
-    String(info.mime ?? '')
-      .toLowerCase()
-
-  if (
-    mime !== 'image/jpeg'
-  ) {
-    return true
-  }
-
-  const text =
-    normalize(
-      getSearchableText(image)
-    )
-
-  return REJECT_TERMS.some(
-    (term) =>
-      text.includes(
-        normalize(term)
-      )
-  )
-}
-
-function containsAnyAlias(
-  text,
-  aliases
-) {
-  const normalizedText =
-    normalize(text)
-
-  const compactText =
-    compact(text)
-
-  return aliases.some(
-    (alias) => {
-      const a =
-        normalize(alias)
-
-      const c =
-        compact(alias)
-
-      return (
-        normalizedText.includes(a) ||
-        compactText.includes(c)
-      )
-    }
-  )
-}
-
-function dormNameMatches(
-  text,
-  dormName
-) {
-  const normalizedText =
-    normalize(text)
-
-  const compactText =
-    compact(text)
-
-  const normalizedDorm =
-    normalize(dormName)
-
-  const compactDorm =
-    compact(dormName)
-
-  // Strongest match:
-  // complete dorm name
-  if (
-    normalizedText.includes(
-      normalizedDorm
-    ) ||
-    compactText.includes(
-      compactDorm
-    )
-  ) {
-    return true
-  }
-
-  // Fallback for titles such as:
-  // "Pritchard Residence Hall"
-  // vs "Pritchard Hall"
-  const meaningfulWords =
-    firstWords(dormName)
-
-  if (
-    meaningfulWords.length === 0
-  ) {
-    return false
-  }
-
-  return meaningfulWords.every(
-    (word) =>
-      normalizedText.includes(word)
-  )
-}
-
-function buildCredit(image) {
-  const info =
-    image.imageinfo?.[0]
-
-  const artist =
-    getMetadata(
-      image,
-      'Artist'
-    )
-
-  const license =
-    getMetadata(
-      image,
-      'LicenseShortName'
-    )
-
-  const credit =
-    getMetadata(
-      image,
-      'Credit'
-    )
-
-  const source =
-    info?.descriptionurl ?? ''
-
-  const pieces = []
-
-  if (artist) {
-    pieces.push(artist)
-  }
-
-  if (license) {
-    pieces.push(license)
-  }
-
-  if (
-    credit &&
-    !pieces.some(
-      (piece) =>
-        normalize(piece) ===
-        normalize(credit)
-    )
-  ) {
-    pieces.push(credit)
-  }
-
-  if (source) {
-    pieces.push(source)
-  }
-
-  return pieces.join(' · ')
-}
-
-function photoFromImage(image) {
-  const info =
-    image.imageinfo?.[0]
-
-  if (!info?.url) {
-    return null
-  }
-
-  return {
-    url: info.url,
-    credit:
-      buildCredit(image),
-
-    source:
-      info.descriptionurl ?? null,
-
-    title:
-      image.title,
-
-    width:
-      Number(
-        info.width ?? 0
-      ),
-
-    height:
-      Number(
-        info.height ?? 0
-      ),
-  }
-}
-
-// ======================================================
-// WIKIMEDIA API
-// ======================================================
-
-async function commonsSearch(
-  search,
-  limit = 15
-) {
-  const params =
-    new URLSearchParams({
-      action: 'query',
-      format: 'json',
-      origin: '*',
-
-      generator: 'search',
-
-      gsrsearch: search,
-      gsrnamespace: '6',
-      gsrlimit: String(limit),
-
-      prop:
-        'imageinfo|categories',
-
-      iiprop:
-        'url|size|mime|extmetadata',
-
-      cllimit: 'max',
-    })
-
-  const url =
-    `${WIKIMEDIA_API}?${params}`
-
-  const response =
-    await fetch(
-      url,
-      {
-        headers: {
-          'User-Agent':
-            'DormCheck/1.0 (student university housing project)',
-          Accept:
-            'application/json',
-        },
-      }
-    )
-
-  if (!response.ok) {
-    throw new Error(
-      `Wikimedia returned HTTP ${response.status}`
-    )
-  }
-
-  const data =
-    await response.json()
-
-  const pages =
-    Object.values(
-      data?.query?.pages ?? {}
-    )
-
-  return pages.filter(
-    (page) =>
-      page &&
-      page.imageinfo?.length
-  )
-}
-
-// ======================================================
-// CAMPUS PHOTOS
-// ======================================================
-
-function campusScore(
-  image,
-  university
-) {
-  if (
-    isRejectedImage(image)
-  ) {
-    return -1000
-  }
-
-  const text =
-    getSearchableText(image)
-
-  let score = 0
-
-  if (
-    containsAnyAlias(
-      text,
-      university.aliases
-    )
-  ) {
-    score += 6
-  }
-
-  const normalized =
-    normalize(text)
-
-  if (
-    normalized.includes('campus')
-  ) {
-    score += 2
-  }
-
-  if (
-    normalized.includes('university')
-  ) {
-    score += 1
-  }
-
-  const width =
-    image.imageinfo?.[0]?.width ??
-    0
-
-  if (width >= 2000) {
-    score += 2
-  }
-
-  if (width >= 3000) {
-    score += 1
-  }
-
-  return score
-}
-
-async function findCampusPhoto(
-  universityName,
-  config
-) {
-  console.log('')
-  console.log(
-    `🏫 Campus photo: ${universityName}`
-  )
-
-  let best = null
-  let bestScore = -Infinity
-
-  for (
-    const search of
-    config.campusSearches
-  ) {
-    console.log(
-      `   Searching: ${search}`
-    )
-
-    let results
-
-    try {
-      results =
-        await commonsSearch(
-          search,
-          15
-        )
-    } catch (error) {
-      console.log(
-        `   ⚠ ${error.message}`
-      )
-
-      await sleep(
-        REQUEST_DELAY_MS
-      )
-
-      continue
-    }
-
-    for (
-      const image of results
-    ) {
-      const score =
-        campusScore(
-          image,
-          config
-        )
-
-      if (
-        score > bestScore
-      ) {
-        best = image
-        bestScore = score
-      }
-    }
-
-    await sleep(
-      REQUEST_DELAY_MS
-    )
-  }
-
-  if (
-    !best ||
-    bestScore < 5
-  ) {
-    console.log(
-      '   ✗ No confident campus image'
-    )
-
-    return null
-  }
-
-  const photo =
-    photoFromImage(best)
-
-  console.log(
-    `   ✓ ${photo.title}`
-  )
-
-  return photo
-}
-
-// ======================================================
-// DORM PHOTOS
-// ======================================================
-
-function dormScore(
-  image,
-  dorm,
-  universityConfig
-) {
-  if (
-    isRejectedImage(image)
-  ) {
-    return -1000
-  }
-
-  const text =
-    getSearchableText(image)
-
-  const dormMatches =
-    dormNameMatches(
-      text,
-      dorm.name
-    )
-
-  if (!dormMatches) {
-    return -1000
-  }
-
-  const universityMatches =
-    containsAnyAlias(
-      text,
-      universityConfig.aliases
-    )
-
-if (!universityMatches) {
-  score -= 3
-} else {
-  score += 4
-}
-
-  let score = 10
-
-  const normalized =
-    normalize(text)
-
-  const dormName =
-    normalize(dorm.name)
-
-  if (
-    normalized.includes(
-      dormName
-    )
-  ) {
-    score += 5
-  }
-
-  if (
-    normalized.includes(
-      'residence hall'
-    )
-  ) {
-    score += 2
-  }
-
-  if (
-    normalized.includes(
-      'dormitory'
-    )
-  ) {
-    score += 1
-  }
-
-  if (
-    normalized.includes(
-      'exterior'
-    )
-  ) {
-    score += 2
-  }
-
-  const width =
-    image.imageinfo?.[0]?.width ??
-    0
-
-  if (width >= 2000) {
-    score += 2
-  }
-
-  if (width >= 3000) {
-    score += 1
-  }
-
-  return score
-}
-
-async function findDormPhoto(
-  dorm,
-  universityConfig
-) {
-const searches = [
-  `${dorm.name} ${dorm.university}`,
-
-  `${dorm.name} Virginia Tech`,
-
-  `"${dorm.name}"`,
-
-  `${dorm.name}`,
-]
-
-  let best = null
-  let bestScore = -Infinity
-
-  for (
-    const search of searches
-  ) {
-    let results
-
-    try {
-      results =
-        await commonsSearch(
-          search,
-          20
-        )
-    } catch (error) {
-      console.log(
-        `      ⚠ Wikimedia error: ${error.message}`
-      )
-
-      await sleep(
-        REQUEST_DELAY_MS
-      )
-
-      continue
-    }
-
-    for (
-      const image of results
-    ) {
-      const score =
-        dormScore(
-          image,
-          dorm,
-          universityConfig
-        )
-
-      if (
-        score > bestScore
-      ) {
-        best = image
-        bestScore = score
-      }
-    }
-
-    await sleep(
-      REQUEST_DELAY_MS
-    )
-  }
-
-if (
-  !best ||
-  bestScore < 7
-) {
-  return null
-}
-
-  return photoFromImage(
-    best
-  )
-}
-
-// ======================================================
-// LOAD DORMS
-// ======================================================
-
-async function getDorms() {
-  const {
-    data,
-    error,
-  } =
-    await supabase
-      .from('dorms')
-      .select(
-        `
-        id,
-        name,
-        university,
-        photo_url,
-        photo_credit
-        `
-      )
-      .order(
-        'university',
-        {
-          ascending: true,
-        }
-      )
-      .order(
-        'name',
-        {
-          ascending: true,
-        }
-      )
-
-  if (error) {
-    throw new Error(
-      `Could not load dorms: ${error.message}`
-    )
-  }
-
-  return data ?? []
-}
-
-// ======================================================
-// UPDATE DORM PHOTO
-// ======================================================
-
-async function saveDormPhoto(
-  dorm,
-  photo
-) {
-  const {
-    error,
-  } =
-    await supabase
-      .from('dorms')
-      .update({
-        photo_url:
-          photo.url,
-
-        photo_credit:
-          photo.credit,
-      })
-      .eq(
-        'id',
-        dorm.id
-      )
-
-  if (error) {
-    throw new Error(
-      error.message
-    )
-  }
-}
-
-// ======================================================
-// SAVE UNIVERSITY PHOTOS JSON
-// ======================================================
-
-async function saveUniversityPhotos(
-  photos
-) {
-  await fs.mkdir(
-    path.dirname(
-      OUTPUT_FILE
-    ),
-    {
-      recursive: true,
-    }
-  )
-
-  await fs.writeFile(
-    OUTPUT_FILE,
-    JSON.stringify(
-      photos,
-      null,
-      2
-    ) + '\n',
-    'utf8'
-  )
-}
-
-// ======================================================
-// MAIN
-// ======================================================
-
-async function main() {
-  console.log(
-    'DormCheck Wikimedia photo fetch'
-  )
-
-  console.log(
-    '==============================='
-  )
-
-  // ----------------------------------------------------
-  // Load dorm database
-  // ----------------------------------------------------
-
-  const dorms =
-    await getDorms()
-
-  console.log(
-    `Loaded ${dorms.length} dorms from Supabase.`
-  )
-
-  const databaseUniversities =
-    [
-      ...new Set(
-        dorms.map(
-          (dorm) =>
-            dorm.university
-        )
-      ),
-    ]
-
-  // ----------------------------------------------------
-  // Verify university names
-  // ----------------------------------------------------
-
-  for (
-    const universityName of
-    databaseUniversities
-  ) {
-    if (
-      !UNIVERSITIES[
-        universityName
-      ]
-    ) {
-      console.log(
-        `⚠ Unknown university name in database: "${universityName}"`
-      )
-    }
-  }
-
-  // ----------------------------------------------------
-  // Fetch university campus photos
-  // ----------------------------------------------------
-
-  const universityPhotos = {}
-
-  for (
-    const [
-      universityName,
-      config,
-    ] of Object.entries(
-      UNIVERSITIES
-    )
-  ) {
-    const photo =
-      await findCampusPhoto(
-        universityName,
-        config
-      )
-
+  for (const q of cfg.queries) {
+    const photo = await commons(q, { pattern: cfg.pattern });
+    await sleep(300);
     if (photo) {
-      universityPhotos[
-        universityName
-      ] = {
-        url:
-          photo.url,
-
-        credit:
-          photo.credit,
-
-        source:
-          photo.source,
-      }
-    }
-
-    await sleep(
-      REQUEST_DELAY_MS
-    )
-  }
-
-  await saveUniversityPhotos(
-    universityPhotos
-  )
-
-  console.log('')
-  console.log(
-    `✓ Campus photo file written to:`
-  )
-
-  console.log(
-    `  ${OUTPUT_FILE}`
-  )
-
-  // ----------------------------------------------------
-  // Fetch dorm exterior photos
-  // ----------------------------------------------------
-
-  console.log('')
-  console.log(
-    'Searching dorm exterior photos...'
-  )
-
-  const missing = []
-
-  let foundCount = 0
-  let skippedCount = 0
-
-  for (
-    let i = 0;
-    i < dorms.length;
-    i++
-  ) {
-    const dorm =
-      dorms[i]
-
-    const number =
-      i + 1
-
-    console.log('')
-    console.log(
-      `[${number}/${dorms.length}] ${dorm.university} — ${dorm.name}`
-    )
-
-    // Keep photos already stored
-    if (dorm.photo_url) {
-      console.log(
-        '   ↷ Already has a photo'
-      )
-
-      skippedCount++
-
-      continue
-    }
-
-    const universityConfig =
-      UNIVERSITIES[
-        dorm.university
-      ]
-
-    if (!universityConfig) {
-      console.log(
-        '   ⚠ University not configured'
-      )
-
-      missing.push({
-        university:
-          dorm.university,
-
-        dorm:
-          dorm.name,
-
-        reason:
-          'university not configured',
-      })
-
-      continue
-    }
-
-    const photo =
-      await findDormPhoto(
-        dorm,
-        universityConfig
-      )
-
-    if (!photo) {
-      console.log(
-        '   ✗ No confident Commons match'
-      )
-
-      missing.push({
-        university:
-          dorm.university,
-
-        dorm:
-          dorm.name,
-
-        reason:
-          'no confident Commons match',
-      })
-
-      continue
-    }
-
-    try {
-      await saveDormPhoto(
-        dorm,
-        photo
-      )
-
-      foundCount++
-
-      console.log(
-        `   ✓ ${photo.title}`
-      )
-
-      console.log(
-        `   ✓ Saved to Supabase`
-      )
-    } catch (error) {
-      console.log(
-        `   ⚠ Could not save: ${error.message}`
-      )
-
-      missing.push({
-        university:
-          dorm.university,
-
-        dorm:
-          dorm.name,
-
-        reason:
-          `Supabase error: ${error.message}`,
-      })
-    }
-
-    await sleep(
-      REQUEST_DELAY_MS
-    )
-  }
-
-  // ----------------------------------------------------
-  // SUMMARY
-  // ----------------------------------------------------
-
-  console.log('')
-  console.log(
-    '==============================='
-  )
-
-  console.log(
-    'PHOTO FETCH COMPLETE'
-  )
-
-  console.log(
-    '==============================='
-  )
-
-  console.log(
-    `Dorm photos found: ${foundCount}`
-  )
-
-  console.log(
-    `Already had photos: ${skippedCount}`
-  )
-
-  console.log(
-    `Still missing: ${missing.length}`
-  )
-
-  console.log(
-    `Campus photos: ${Object.keys(universityPhotos).length}`
-  )
-
-  if (
-    missing.length > 0
-  ) {
-    console.log('')
-    console.log(
-      'Dorms still missing a confident photo:'
-    )
-
-    for (
-      const item of missing
-    ) {
-      console.log(
-        `- ${item.university} — ${item.dorm} (${item.reason})`
-      )
+      universityPhotos[name] = photo;
+      console.log("campus photo:", name);
+      break;
     }
   }
-
-  console.log('')
-  console.log(
-    'Done.'
-  )
+  if (!universityPhotos[name]) console.warn("no campus photo found:", name);
 }
 
-main().catch(
-  (error) => {
-    console.error('')
-    console.error(
-      '❌ Photo script failed:'
-    )
+await mkdir("lib", { recursive: true });
+await writeFile("lib/university-photos.json", JSON.stringify(universityPhotos, null, 2));
 
-    console.error(error)
+// ---------- 2) A photo for every dorm ----------
+const todo = (dorms ?? []).filter(
+  (d) => !d.photo_url || d.photo_source === "loose" || d.photo_source === "campus"
+);
+const counts = { exact: 0, loose: 0, campus: 0, none: 0 };
+const none = [];
 
-    process.exit(1)
+for (const d of todo) {
+  const cfg = UNIVERSITIES[d.university];
+  const tokens = d.name
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w && !STOP.has(w));
+
+  let photo = null;
+  let source = null;
+
+  if (cfg && tokens.length > 0) {
+    photo =
+      (await commons(`${d.name} ${d.university}`, { pattern: cfg.pattern, tokens })) ??
+      (await commons(`${d.name} residence hall`, { pattern: cfg.pattern, tokens }));
+    await sleep(300);
+    if (photo) source = "exact";
   }
-)
+
+  if (!photo && cfg) {
+    photo = await openverse(`${d.name} ${d.university}`, cfg.pattern);
+    await sleep(300);
+    if (photo) source = "loose";
+  }
+
+  if (!photo && universityPhotos[d.university]) {
+    photo = universityPhotos[d.university];
+    source = "campus";
+  }
+
+  if (!photo) {
+    counts.none++;
+    none.push(d.name);
+    continue;
+  }
+
+  // Don't downgrade a dorm that already has a better photo than this run found.
+  const rank = { campus: 0, loose: 1, exact: 2 };
+  if (d.photo_url && rank[source] <= (rank[d.photo_source] ?? 2)) continue;
+
+  const { error: upErr } = await supabase
+    .from("dorms")
+    .update({ photo_url: photo.url, photo_credit: photo.credit, photo_source: source })
+    .eq("id", d.id);
+  if (upErr) console.error("update failed:", d.name, upErr.message);
+  else {
+    counts[source]++;
+    console.log(`${source}:`, d.name);
+  }
+}
+
+console.log("\nDone.", counts);
+if (none.length) console.log("No photo at all (check UNIVERSITIES names):\n" + none.join("\n"));

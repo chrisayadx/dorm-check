@@ -102,7 +102,7 @@ export default function HomePage() {
             {universities.length > 0 && (
               <div className="hero-arc">
                 {universities
-                  .slice(0, 6)
+                  .slice(0, 6000)
                   .map((u, i, arr) => {
                     const mid =
                       (arr.length - 1) / 2
