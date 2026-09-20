@@ -39,10 +39,11 @@ export function SiteFrame({
     height: "100%",
     objectFit: "cover",
     pointerEvents: "none",
+    zIndex: 1
   };
 
   return (
-    <div className="ground">
+    <div className={`ground${bgPhoto ? ' has-photo' : ''}`}>
       <div className="ground-media" aria-hidden>{media}</div>
 
       {prevSlot && (
@@ -63,7 +64,7 @@ export function SiteFrame({
           style={{ ...overlayBase, animation: "bg-photo-in 1.3s ease 0.15s forwards" }}
         />
       )}
-
+      {bgPhoto && <div className="hero-tint" aria-hidden />}
       <div className="frame-wrap">
         <div className="frame">
           <div className="frame-bar">

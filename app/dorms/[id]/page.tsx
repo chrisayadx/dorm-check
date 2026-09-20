@@ -36,6 +36,8 @@ type Review = {
   bathroom_type?: string | null
   proximity_notes?: string | null
   year_lived?: number | null
+  photos?: string[] | null
+  
 }
 
 const ROOM_TYPES = ['Single', 'Double', 'Triple', 'Suite']
@@ -65,8 +67,11 @@ export default function DormPage() {
   const [bathroomType, setBathroomType] = useState<string | null>(null)
   const [proximity, setProximity] = useState<string[]>([])
   const [yearLived, setYearLived] = useState('')
+  const [photoFiles, setPhotoFiles] = useState<File[]>([])
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  
 
   useEffect(() => {
     async function load() {
@@ -87,6 +92,18 @@ export default function DormPage() {
     )
   }
 
+// Object URLs have to be revoked or the page leaks blobs as people swap
+  // photos. Cap at three so one review can't dominate the page.
+  function pickPhotos(files: FileList | null) {
+    if (!files) return
+    const next = Array.from(files).slice(0, 3)
+    setPhotoFiles(next)
+    setPhotoPreviews((prev) => {
+      prev.forEach((u) => URL.revokeObjectURL(u))
+      return next.map((f) => URL.createObjectURL(f))
+    })
+  }
+  
   async function submitReview(e: React.FormEvent) {
     e.preventDefault()
     if (!authorName.trim() || !body.trim()) {
@@ -96,6 +113,21 @@ export default function DormPage() {
     setSubmitting(true)
     setError(null)
 
+// Photos go up first. A failed upload shouldn't lose the written review,
+    // so a failure here posts the text without the images rather than aborting.
+    console.log('FILES TO UPLOAD:', photoFiles.length)
+    const photoUrls: string[] = []
+    for (const file of photoFiles) {
+      const safeName = `${id}/${Date.now()}-${file.name.replace(/[^\w.-]/g, '_')}`
+      const { error: upErr } = await supabase.storage
+        .from('dorm-photos')
+        .upload(safeName, file)
+      if (upErr) { console.error('UPLOAD FAILED:', upErr); continue }
+        photoUrls.push(
+        supabase.storage.from('dorm-photos').getPublicUrl(safeName).data.publicUrl
+      )
+    }
+    console.log('UPLOADED URLS:', photoUrls)
     const { data, error: insertError } = await supabase
       .from('reviews')
       .insert({
@@ -103,6 +135,7 @@ export default function DormPage() {
         author_name: authorName.trim(),
         rating,
         body: body.trim(),
+        photos: photoUrls.length > 0 ? photoUrls : null,
         room_number: roomNumber.trim() || null,
         room_type: roomType,
         floor: floor ? parseInt(floor, 10) : null,
@@ -117,6 +150,7 @@ export default function DormPage() {
     if (insertError || !data) {
       setError('That did not save. Check your connection and post again.')
     } else {
+      console.log('INSERTED REVIEW:', data)
       setReviews([data, ...reviews])
       setAuthorName('')
       setBody('')
@@ -128,6 +162,12 @@ export default function DormPage() {
       setBathroomType(null)
       setProximity([])
       setYearLived('')
+      photoPreviews.forEach((u) => URL.revokeObjectURL(u))
+      setPhotoFiles([])
+      setPhotoPreviews([])
+      photoPreviews.forEach((u) => URL.revokeObjectURL(u))
+      setPhotoFiles([])
+      setPhotoPreviews([])  
     }
     setSubmitting(false)
   }
@@ -266,6 +306,28 @@ export default function DormPage() {
                 )}
 
                 <p className="t-body" style={{ margin: 0 }}>{r.body}</p>
+                
+                {r.photos && r.photos.length > 0 && (
+                  <div className="row wrap" style={{ gap: 8, marginTop: 12 }}>
+                    {r.photos.map((url) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={url}
+                        src={url}
+                        alt=""
+                        loading="lazy"
+                        style={{
+                          width: 128,
+                          height: 96,
+                          objectFit: 'cover',
+                          borderRadius: 'var(--r-sm)',
+                          border: '1px solid var(--border)',
+                          display: 'block',
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
                 <p className="t-meta" style={{ marginTop: 10, fontSize: 12 }}>
                   {new Date(r.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
                 </p>
@@ -307,6 +369,56 @@ export default function DormPage() {
             <span className="field-label">Your experience</span>
             <textarea className="input" value={body} onChange={(e) => setBody(e.target.value)} placeholder="Room size, noise, heat in September, how far the laundry is." />
           </label>
+
+          <div className="field">
+            <span className="field-label">
+              Photos <span style={{ fontWeight: 500 }}>(up to 3, optional)</span>
+            </span>
+
+            <label
+              style={{
+                display: 'block',
+                border: '1.5px dashed #cfdcf2',
+                borderRadius: 'var(--r-md)',
+                padding: photoPreviews.length > 0 ? 10 : 20,
+                textAlign: 'center',
+                cursor: 'pointer',
+                background: '#fbfcff',
+              }}
+            >
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(e) => pickPhotos(e.target.files)}
+                style={{ position: 'absolute', width: 1, height: 1, opacity: 0 }}
+              />
+              {photoPreviews.length > 0 ? (
+                <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+                  {photoPreviews.map((src) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={src}
+                      src={src}
+                      alt=""
+                      style={{
+                        width: 76,
+                        height: 58,
+                        objectFit: 'cover',
+                        borderRadius: 'var(--r-sm)',
+                        display: 'block',
+                      }}
+                    />
+                  ))}
+                  <span className="t-meta" style={{ display: 'block', width: '100%', marginTop: 6 }}>
+                    Choose again to replace
+                  </span>
+                </span>
+              ) : (
+                <span className="t-meta">Add a photo of the room</span>
+              )}
+            </label>
+          </div>
 
           <hr className="divider" />
           <p className="field-label" style={{ color: 'var(--ink-500)', marginBottom: -4 }}>

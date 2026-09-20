@@ -57,7 +57,7 @@ export function NavLinks({ size = 14 }: { size?: number }) {
         <Link
           key={item.href}
           href={item.href}
-          style={{ fontSize: size, fontWeight: 600, color: "var(--ink-500)" }}
+          style={{ fontSize: size, fontWeight: 600}}
         >
           {item.label}
         </Link>
@@ -120,8 +120,7 @@ export function Rating({
               width: `${pct * 100}%`,
               height: "100%",
               borderRadius: 999,
-              background: "linear-gradient(90deg, #3d7bff, #1330a6)",
-            }}
+              background: "linear-gradient(135deg, #3d7bff, #1330a6)",            }}
           />
         </span>
         {typeof count === "number" && size !== "sm" && (

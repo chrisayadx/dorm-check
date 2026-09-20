@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { SiteFrame, CampusGround } from '../components/SiteFrame'
 import { UniversityMark, initialsOf } from '../components/ui'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import universityPhotos from '@/lib/university-photos.json'
 
 type Entry = { name: string; count: number }
 
@@ -31,6 +32,25 @@ export default function UniversitiesPage() {
       .map(([name, count]) => ({ name, count }))
   }, [dorms])
 
+  // All campus photos we have, in a stable order. The hero cycles through
+  // them so the page isn't tied to one school it can't justify featuring.
+  const photoUrls = useMemo(() => {
+    const photos = universityPhotos as Record<string, { url: string }>
+    return Object.values(photos).map((p) =>
+      p.url.replace('thumb.wikimedia.org', 'upload.wikimedia.org')
+    )
+  }, [])
+
+  const [photoIndex, setPhotoIndex] = useState(0)
+
+  useEffect(() => {
+    if (photoUrls.length < 2) return
+    const t = setInterval(() => {
+      setPhotoIndex((i) => (i + 1) % photoUrls.length)
+    }, 9000)
+    return () => clearInterval(t)
+  }, [photoUrls.length])
+
   const q = search.trim().toLowerCase()
   const visible = q
     ? universities.filter((u) => u.name.toLowerCase().includes(q))
@@ -39,7 +59,7 @@ export default function UniversitiesPage() {
   return (
     <main>
       <section>
-        <SiteFrame media={<CampusGround seed="universities" />}>
+        <SiteFrame media={<CampusGround seed="universities" />} bgPhoto={photoUrls[photoIndex] ?? null}>
           <div className="hero-lead">
             <h1 className="t-hero" style={{ fontSize: 'clamp(28px, 3.6vw, 40px)', maxWidth: '18ch' }}>
               Find your campus

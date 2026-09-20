@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { SiteFrame, CampusGround } from '../components/SiteFrame'
+import universityPhotos from '@/lib/university-photos.json'
 
 const COMMON_AMENITIES = [
   'AC',
@@ -101,12 +102,21 @@ export default function SubmitDormPage() {
 
     router.push(`/dorms/${data.id}`)
   }
+  // One fixed campus shot. This page has no school context, and a hero that
+  // changes between renders would be noise on a form.
+  const photos = universityPhotos as Record<string, { url: string }>
+  const submitHero =
+    photos['University of Virginia']?.url.replace(
+      'thumb.wikimedia.org',
+      'upload.wikimedia.org'
+    ) ?? null
 
   return (
     <main>
       <section>
         <SiteFrame
           media={<CampusGround seed="submit" />}
+          bgPhoto={submitHero}
           action={
             <Link href="/" className="btn btn-outline btn-sm">
               All dorms

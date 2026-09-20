@@ -1,13 +1,16 @@
 'use client'
-
-import { useEffect, useMemo, useState } from 'react'
+import { AiChat } from './components/AiChat'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { SiteFrame, CampusGround } from './components/SiteFrame'
 import { DormCard, CardSkeleton } from './components/DormCard'
-import { Figure, initialsOf } from './components/ui'
-import { UniLogo } from './components/UniLogo'
+import { Figure } from './components/ui'
 import { summarize, groupByDorm } from '@/lib/ratings'
+import { HeroArc } from './components/HeroArc'
+import universityPhotos from '@/lib/university-photos.json'
+
+
 
 type Dorm = {
   id: string
@@ -25,6 +28,35 @@ export default function HomePage() {
     { dorm_id: string; rating: number }[]
   >([])
   const [search, setSearch] = useState('')
+
+    const resultsRef = useRef<HTMLElement>(null)
+
+  // Scrolls the results section to the top of the viewport. Called on submit
+  // and on the debounced typing effect below.
+  const scrollToResults = useCallback(() => {
+    resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
+
+  // Typing scrolls down once, when a query first produces matches. Without the
+  // guard, every keystroke would re-trigger the scroll and fight the user as
+  // they keep typing. The delay lets them finish a word first.
+  const hasScrolled = useRef(false)
+
+  useEffect(() => {
+    const q = search.trim()
+    if (!q) {
+      hasScrolled.current = false
+      return
+    }
+    if (hasScrolled.current) return
+
+    const t = setTimeout(() => {
+      hasScrolled.current = true
+      scrollToResults()
+    }, 500)
+    return () => clearTimeout(t)
+  }, [search, scrollToResults])
+
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
 
@@ -48,11 +80,12 @@ export default function HomePage() {
       if (cancelled) return
 
       if (dormsRes.error) {
+        console.error('SUPABASE DORMS ERROR:', dormsRes.error)
         setLoadFailed(true)
         setLoading(false)
         return
       }
-
+      console.log('DORMS LOADED:', dormsRes.data?.length, dormsRes.data?.[0])
       setDorms(dormsRes.data ?? [])
       setReviews(reviewsRes.data ?? [])
       setLoading(false)
@@ -81,69 +114,41 @@ export default function HomePage() {
     [dorms]
   )
 
+    const [featuredUni, setFeaturedUni] = useState<string | null>(null)
+
+  // Campus photo per university. Files go in public/ and are referenced from
+  // the root: public/campus/vt.jpg → '/campus/vt.jpg'. When a school has no
+  // dedicated shot here, the first dorm photo for that school is used.
+  // Campus photos come from scripts/fetch-photos.mjs, which writes this file
+  // from Wikimedia Commons. Keys are the `university` values in the database.
+    const featuredPhoto = useMemo(() => {
+    if (!featuredUni) return null
+    const photos = universityPhotos as Record<string, { url: string }>
+    return photos[featuredUni]?.url?.replace('thumb.wikimedia.org', 'upload.wikimedia.org') ?? null
+  }, [featuredUni])
+
+  const handleFeature = useCallback((u: string) => setFeaturedUni(u), [])
+
   const q = search.trim().toLowerCase()
 
+  // Search shows every match; the default view shows a top slice. The query
+  // already sorts by avg_rating desc, so the first nine are the highest rated.
   const visible = q
     ? dorms.filter(
         (d) =>
           d.name.toLowerCase().includes(q) ||
           d.university.toLowerCase().includes(q)
       )
-    : dorms
+    : dorms.slice(0, 9)
 
   return (
     <main>
       {/* ---------- hero ---------- */}
-      <section>
-        <SiteFrame media={<CampusGround />}>
-          <div className="hero-center">
+       <section>
+        <SiteFrame media={null} bgPhoto={featuredPhoto}>
+          <div className="hero-center" style={{ position: 'relative', paddingTop: 96 }}>
 
-            {/* University logos */}
-            {universities.length > 0 && (
-              <div className="hero-arc">
-                {universities
-                  .slice(0, 6)
-                  .map((u, i, arr) => {
-                    const mid =
-                      (arr.length - 1) / 2
-
-                    const lift =
-                      Math.abs(i - mid) * 22
-
-                    return (
-                      <span
-                        key={u}
-                        title={u}
-                        style={{
-                          transform: `translateY(${lift}px)`,
-                        }}
-                      >
-                        <span
-                          style={{
-                            width: 52,
-                            height: 52,
-                            borderRadius: '50%',
-                            background: '#fff',
-                            boxShadow:
-                              '0 4px 14px rgba(30, 64, 175, 0.15)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            overflow: 'hidden',
-                            fontWeight: 700,
-                            fontSize: 14,
-                            color: 'var(--blue-900)',
-                          }}
-                        >
-                          <UniLogo
-                            code={initialsOf(u)}
-                          />
-                        </span>
-                      </span>
-                    )
-                  })}
-              </div>
-            )}
+            <HeroArc universities={universities} onFeature={handleFeature} />
 
             <h1
               className="t-hero"
@@ -167,7 +172,10 @@ export default function HomePage() {
             </p>
 
             <form
-              onSubmit={(e) => e.preventDefault()}
+              onSubmit={(e) => {
+                e.preventDefault()
+                scrollToResults()
+              }}
               style={{
                 display: 'flex',
                 gap: 10,
@@ -280,10 +288,12 @@ export default function HomePage() {
 
       {/* ---------- dorms ---------- */}
       <section
+        ref={resultsRef}
         className="shell"
         style={{
           paddingTop: 56,
           paddingBottom: 24,
+          scrollMarginTop: 24
         }}
       >
         <div
@@ -299,9 +309,7 @@ export default function HomePage() {
         >
           <div>
             <h2 className="t-section">
-              {q
-                ? `Matching "${search.trim()}"`
-                : 'Every dorm on DormCheck'}
+              {q ? `Matching "${search.trim()}"` : 'Top rated dorms'}
             </h2>
 
             <p
@@ -317,16 +325,18 @@ export default function HomePage() {
                       ? 'building'
                       : 'buildings'
                   }`
-                : 'Sorted by rating. Buildings without a student photo show an illustrated facade.'}
+                : 'The nine highest rated buildings students have reviewed so far.'}
             </p>
           </div>
 
-          <Link
-            href="/submit"
-            className="btn btn-soft btn-sm"
-          >
-            Add a dorm
-          </Link>
+          <div className="row wrap" style={{ gap: 10 }}>
+            <Link href="/browse" className="btn btn-outline btn-sm">
+              See all dorms
+            </Link>
+            <Link href="/submit" className="btn btn-soft btn-sm">
+              Add a dorm
+            </Link>
+          </div>
         </div>
 
         <div className="grid-auto">
@@ -508,6 +518,7 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+            <AiChat dormContext={universities.join(', ')} />
     </main>
   )
 }

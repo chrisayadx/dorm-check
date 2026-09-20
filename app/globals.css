@@ -417,8 +417,10 @@ button.chip-on:hover {
   align-items: center;
   justify-content: space-between;
   gap: var(--s-4);
-  padding: 8px 10px 8px 16px;
+  padding: 14px 20px;
   flex-wrap: wrap;
+  position: relative;
+  z-index: 3;
 }
 
 .panel {
@@ -436,9 +438,6 @@ button.chip-on:hover {
   left: 0;
   right: 0;
   top: 0;
-  /* Stops short of the skyline. Any wash still covering the buildings makes
-     the panel's copy look lighter than the same buildings outside the frame,
-     which is the tell that gives away the two layers. */
   height: 60%;
   z-index: 1;
   background: linear-gradient(
@@ -454,6 +453,110 @@ button.chip-on:hover {
 .panel-content {
   position: relative;
   z-index: 2;
+}
+
+/* ---------- hero with a campus photograph ---------- */
+/*
+   When a photo is the ground, the white frame has nothing to do — the photo
+   is the structure. Everything goes transparent, a dark tint carries the
+   type, and the text flips to white.
+*/
+
+.hero-tint {
+  z-index: 2;
+}
+
+.frame-wrap {
+  position: relative;
+  z-index: 3;
+}
+
+.ground.has-photo {
+  background: transparent;
+  border-bottom: 0;
+}
+
+.ground.has-photo .ground-media,
+.ground.has-photo .panel-media {
+  display: none;
+}
+
+.ground.has-photo .frame {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.ground.has-photo .panel {
+  background: transparent;
+  overflow: visible;
+}
+
+.ground.has-photo .panel-scrim {
+  display: none;
+}
+
+.hero-tint {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 20, 48, 0.72) 0%,
+    rgba(8, 20, 48, 0.45) 40%,
+    rgba(8, 20, 48, 0.28) 100%
+  );
+}
+
+.ground.has-photo .frame-bar {
+  position: relative;
+  z-index: 3;
+}
+
+.ground.has-photo .frame-bar a {
+  color: #fff;
+  text-shadow: 0 1px 12px rgba(8, 20, 48, 0.7);
+}
+
+.ground.has-photo .frame-bar a span {
+  color: #fff;
+}
+
+.ground.has-photo .t-hero,
+.ground.has-photo .t-display {
+  color: #fff;
+  text-shadow: 0 2px 18px rgba(8, 20, 48, 0.45);
+}
+
+.ground.has-photo .t-lead,
+.ground.has-photo .t-meta {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.ground.has-photo .chip {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.34);
+}
+
+.ground.has-photo .btn-outline {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(8px);
+}
+
+.ground.has-photo .btn-outline:hover {
+  background: rgba(255, 255, 255, 0.26);
+  color: #fff;
+}
+
+/* Default nav colour, for heroes without a photo. */
+.frame-bar a {
+  color: var(--ink-500);
 }
 
 /* ---------- hero content ---------- */
@@ -575,16 +678,20 @@ button.chip-on:hover {
   }
 }
 
-/* Universities arced over the hero skyline. Layout lives here, not inline, so
-   the small-screen rule can actually switch it off. */
-.hero-arc {
-  width: 100%;
-  max-width: 620px;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 8px;
+.arc-focus-ring {
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    0 0 0 4px rgba(47, 107, 246, 0.26),
+    0 10px 30px rgba(17, 41, 92, 0.24);
+  pointer-events: none;
+  transition: opacity 0.3s ease;
 }
+
+@keyframes bg-photo-in  { from { opacity: 0;    } to { opacity: 1; } }
+@keyframes bg-photo-out { from { opacity: 1; } to { opacity: 0;    } }
 
 .grid-auto {
   display: grid;
@@ -619,9 +726,7 @@ button.chip-on:hover {
   .frame-nav {
     display: none;
   }
-  .hero-arc {
-    display: none;
-  }
+  
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -744,16 +849,6 @@ button.chip-on:hover {
   50%       { transform: scale(1.12); opacity: 0.55; }
 }
 
-@keyframes bg-photo-in {
-  from { opacity: 0;    }
-  to   { opacity: 0.38; }
-}
-
-@keyframes bg-photo-out {
-  from { opacity: 0.38; }
-  to   { opacity: 0;    }
-}
-
 .arc-focus-ring {
   position: absolute;
   inset: -8px;
@@ -825,4 +920,79 @@ button.chip-on:hover {
   font-weight: 500;
   color: var(--ink-400);
   margin-top: 1px;
+}
+
+/* Sits between the photo and the content so white type stays readable on
+   any photo, bright or dark. Darkest at the top where the nav and heading
+   are, clearing by the bottom so the photo still reads as a photo. */
+.hero-tint {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 20, 48, 0.62) 0%,
+    rgba(8, 20, 48, 0.42) 45%,
+    rgba(8, 20, 48, 0.28) 100%
+  );
+}
+
+.ground .frame-bar a,
+.ground .frame-bar span {
+  color: #fff;
+}
+
+.hero-center .t-hero,
+.hero-lead .t-hero {
+  color: #fff;
+  text-shadow: 0 2px 18px rgba(8, 20, 48, 0.4);
+}
+
+.hero-center .t-lead,
+.hero-lead .t-lead {
+  color: rgba(255, 255, 255, 0.88);
+}
+.ground .btn-outline {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(8px);
+}
+.ground .btn-outline:hover {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.ground .frame-bar a {
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 10px rgba(8, 20, 48, 0.55);
+  font-weight: 600;
+  transition: color 0.15s ease;
+}
+
+.ground .frame-bar a:hover {
+  color: #fff;
+  text-decoration: none;
+}
+
+/* The wordmark carries more weight than the links beside it. */
+.ground .frame-bar a span {
+  color: #fff;
+}
+
+/* Default nav colour for pages with a light hero. */
+.frame-bar a {
+  color: var(--ink-500);
+}
+
+/* Over a campus photo, white with a shadow so it holds on bright areas. */
+.ground .frame-bar a {
+  color: #fff;
+  text-shadow: 0 1px 12px rgba(8, 20, 48, 0.7);
+}
+
+.ground .frame-bar a:hover {
+  color: #fff;
+  text-decoration: underline;
 }

@@ -7,11 +7,25 @@ import { supabase } from '@/lib/supabase'
 import { summarize, groupByDorm } from '@/lib/ratings'
 import { SiteFrame, CampusGround } from '../components/SiteFrame'
 import { DormCard, CardSkeleton, type DormSummary } from '../components/DormCard'
+import universityPhotos from '@/lib/university-photos.json'
+
 
 function BrowseContent() {
   const searchParams = useSearchParams()
   const universityFilter = searchParams.get('university') ?? null
   const qParam = searchParams.get('q') ?? ''
+
+    // A filtered view gets that campus's photo. The unfiltered "all dorms"
+  // view has no single school, so it falls back to a fixed one.
+  const photos = universityPhotos as Record<string, { url: string }>
+  const fix = (u?: string) =>
+    u?.replace('thumb.wikimedia.org', 'upload.wikimedia.org') ?? null
+
+  const heroPhoto = universityFilter
+    ? fix(photos[universityFilter]?.url)
+    : fix(photos['Virginia Tech']?.url)
+
+  console.log('FILTER:', universityFilter, '→ PHOTO:', heroPhoto)
 
   const [dorms, setDorms] = useState<DormSummary[]>([])
   const [reviews, setReviews] = useState<{ dorm_id: string; rating: number }[]>([])
@@ -55,7 +69,7 @@ function BrowseContent() {
   return (
     <main>
       <section>
-        <SiteFrame media={<CampusGround seed="browse" />}>
+        <SiteFrame media={<CampusGround seed="browse" />} bgPhoto={heroPhoto}>
           <div className="hero-lead">
             <h1 className="t-hero" style={{ fontSize: 'clamp(28px, 3.6vw, 40px)', maxWidth: '22ch' }}>
               {universityFilter ?? 'Every dorm on DormCheck'}
