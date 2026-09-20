@@ -75,13 +75,19 @@ export default function HomePage() {
         supabase.from('reviews').select('dorm_id, rating'),
       ])
       if (cancelled) return
-      if (dormsRes.error) { setLoadFailed(true); setLoading(false); return }
+      if (dormsRes.error) {
+        setLoadFailed(true)
+        setLoading(false)
+        return
+      }
       setDorms(dormsRes.data ?? [])
       setReviews(reviewsRes.data ?? [])
       setLoading(false)
     }
     load()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [reloadKey])
 
   const byDorm = useMemo(() => groupByDorm(reviews), [reviews])
@@ -91,32 +97,19 @@ export default function HomePage() {
     [dorms]
   )
 
-  // Best available photo per university — used as background when that icon is featured
-  const universityPhotos = useMemo(() => {
-    const map = new Map<string, string | null>()
-    for (const u of universities) {
-      const hit = dorms.find((d) => d.university === u && d.photo_url)
-      map.set(u, hit?.photo_url ?? null)
-    }
-    return map
-  }, [dorms, universities])
+  const arcCount = Math.min(universities.length, 6)
 
-  // Cycle featured icon every 10 s once universities are loaded
+  // Cycle the featured icon every 10 s once universities are loaded
   useEffect(() => {
-    if (universities.length === 0) return
+    if (arcCount === 0) return
     setFeaturedIndex(0)
     let idx = 0
     const interval = setInterval(() => {
-      idx = (idx + 1) % Math.min(universities.length, 6)
+      idx = (idx + 1) % arcCount
       setFeaturedIndex(idx)
     }, 10000)
     return () => clearInterval(interval)
-  }, [universities.length])
-
-  const featuredBgPhoto =
-    featuredIndex !== null
-      ? (universityPhotos.get(universities[featuredIndex]) ?? null)
-      : null
+  }, [arcCount])
 
   const universityDormCounts = useMemo(() => {
     const map = new Map<string, number>()
@@ -170,36 +163,39 @@ export default function HomePage() {
   // x is centered on the heading; y is always negative (above the text).
   function arcPos(i: number, n: number) {
     const t = n === 1 ? 0.5 : i / (n - 1)
-    // Span from ~158° to ~22° — a wide arc, open side facing down
+    // Span from ~158° to ~22°: a wide arc, open side facing down
     const angle = Math.PI * (0.88 - 0.76 * t)
     return {
       x: arcRx * Math.cos(angle),
       y: -(ARC_RY * Math.sin(angle) + ARC_EXTRA),
-      // Icons at the ends sit lower on the arc, fade them slightly
+      // Icons at the ends sit lower on the arc, so fade them slightly
       edgeOpacity: 0.5 + Math.min(t, 1 - t),
     }
   }
-
-  const arcCount = Math.min(universities.length, 6)
 
   return (
     <main>
       {/* ---------- hero ---------- */}
       <section>
         <SiteFrame media={<CampusGround />}>
-          <div className="hero-center">
-
-            {/* University logos */}
-            {universities.length > 0 && (
-              <div className="hero-arc">
-                {universities
-                  .slice(0, 6)
-                  .map((u, i, arr) => {
-                    const mid =
-                      (arr.length - 1) / 2
-
-                    const lift =
-                      Math.abs(i - mid) * 22
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 20,
+              textAlign: 'center',
+            }}
+          >
+            <div className="hero-center">
+              {/* University logos */}
+              {arcCount > 0 && (
+                <div className="hero-arc">
+                  {universities.slice(0, arcCount).map((u, i) => {
+                    const { x, y, edgeOpacity } = arcPos(i, arcCount)
+                    const isFeatured = featuredIndex === i
+                    const yNow = mounted ? y : 0 // start at the heading, rise into place
+                    const delay = `${(i * 0.09).toFixed(2)}s`
 
                     return (
                       <div
@@ -211,13 +207,9 @@ export default function HomePage() {
                           top: 0,
                           width: 44,
                           height: 44,
-                          transform: `translate(
-                            calc(-50% + ${x.toFixed(1)}px),
-                            calc(-50% + ${yNow.toFixed(1)}px)
-                          ) scale(${isFeatured ? 1.42 : 1})`,
+                          transform: `translate(calc(-50% + ${x.toFixed(1)}px), calc(-50% + ${yNow.toFixed(1)}px)) scale(${isFeatured ? 1.42 : 1})`,
                           opacity: mounted ? (isFeatured ? 1 : edgeOpacity) : 0,
-                          transition: `transform 0.65s cubic-bezier(0.34,1.56,0.64,1) ${delay},
-                                       opacity 0.5s ease ${delay}`,
+                          transition: `transform 0.65s cubic-bezier(0.34,1.56,0.64,1) ${delay}, opacity 0.5s ease ${delay}`,
                           zIndex: isFeatured ? 5 : 1,
                         }}
                       >
@@ -280,7 +272,10 @@ export default function HomePage() {
               type="search"
               placeholder="Search a school or dorm…"
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setDropdownOpen(true) }}
+              onChange={(e) => {
+                setSearch(e.target.value)
+                setDropdownOpen(true)
+              }}
               onFocus={() => setDropdownOpen(true)}
               style={{ fontSize: 16, padding: '15px 22px', borderRadius: 'var(--r-pill)' }}
             />
@@ -400,32 +395,45 @@ export default function HomePage() {
                 : 'Sorted by rating. Buildings without a student photo show an illustrated facade.'}
             </p>
           </div>
-          <Link href="/submit" className="btn btn-soft btn-sm">Add a dorm</Link>
+          <Link href="/submit" className="btn btn-soft btn-sm">
+            Add a dorm
+          </Link>
         </div>
 
         <div className="grid-auto">
           {loading && Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)}
-          {!loading && visible.map((dorm) => (
-            <DormCard
-              key={dorm.id}
-              dorm={dorm}
-              rating={summarize(byDorm.get(dorm.id) ?? [], dorm.avg_rating).value}
-            />
-          ))}
+          {!loading &&
+            visible.map((dorm) => (
+              <DormCard
+                key={dorm.id}
+                dorm={dorm}
+                rating={summarize(byDorm.get(dorm.id) ?? [], dorm.avg_rating).value}
+              />
+            ))}
         </div>
 
         {!loading && loadFailed && (
-          <div className="card" style={{ padding: 40, textAlign: 'center', borderStyle: 'dashed', boxShadow: 'none' }}>
-            <p className="t-card" style={{ marginBottom: 6 }}>The dorm list did not load</p>
+          <div
+            className="card"
+            style={{ padding: 40, textAlign: 'center', borderStyle: 'dashed', boxShadow: 'none' }}
+          >
+            <p className="t-card" style={{ marginBottom: 6 }}>
+              The dorm list did not load
+            </p>
             <p className="t-body" style={{ margin: '0 auto 18px' }}>
               The database did not answer. Your connection or the server is the likely cause.
             </p>
-            <button type="button" className="btn btn-primary" onClick={retry}>Try again</button>
+            <button type="button" className="btn btn-primary" onClick={retry}>
+              Try again
+            </button>
           </div>
         )}
 
         {!loading && !loadFailed && visible.length === 0 && (
-          <div className="card" style={{ padding: 40, textAlign: 'center', borderStyle: 'dashed', boxShadow: 'none' }}>
+          <div
+            className="card"
+            style={{ padding: 40, textAlign: 'center', borderStyle: 'dashed', boxShadow: 'none' }}
+          >
             <p className="t-card" style={{ marginBottom: 6 }}>
               {q ? `Nothing here matches "${search.trim()}"` : 'No dorms yet'}
             </p>
@@ -434,7 +442,9 @@ export default function HomePage() {
                 ? 'Try the university name, or add the building yourself.'
                 : 'Add the first building and leave the first review.'}
             </p>
-            <Link href="/submit" className="btn btn-primary">Add a dorm</Link>
+            <Link href="/submit" className="btn btn-primary">
+              Add a dorm
+            </Link>
           </div>
         )}
       </section>
@@ -462,8 +472,12 @@ export default function HomePage() {
             </p>
           </div>
           <div className="row wrap" style={{ gap: 12 }}>
-            <Link href="/submit" className="btn btn-primary">Add a dorm</Link>
-            <Link href="/universities" className="btn btn-outline">Browse by university</Link>
+            <Link href="/submit" className="btn btn-primary">
+              Add a dorm
+            </Link>
+            <Link href="/universities" className="btn btn-outline">
+              Browse by university
+            </Link>
           </div>
         </div>
       </section>
