@@ -46,9 +46,9 @@ export function Logo({ compact = false }: { compact?: boolean }) {
 
 const NAV = [
   { href: "/browse", label: "Browse dorms" },
-  { href: "/browse?group=university", label: "Universities" },
+  { href: "/universities", label: "Universities" },
   { href: "/submit", label: "Add a dorm" },
-];
+]
 
 export function NavLinks({ size = 14 }: { size?: number }) {
   return (

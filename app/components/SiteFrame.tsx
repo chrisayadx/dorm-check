@@ -1,36 +1,68 @@
+'use client'
+
 import Link from "next/link";
 import { Logo, NavLinks } from "./ui";
+import { useState, useEffect, useRef } from "react";
 
-/**
- * SiteFrame — the system's page shell, and the one bold move on every page.
- *
- * A photograph is the page ground, running the full width of the page. A white
- * frame floats on it, inset from the edges, and the content panel is cut out of
- * that frame so the white reads as structural lines rather than background.
- *
- * The panel holds a second copy of the image. The two copies have to read as
- * one continuous photograph, which they do only because .ground-media and
- * .panel-media give both the same width, the same centre, and the same bottom
- * line, at natural aspect ratio. Never set width or height on the media element
- * itself: inline styles beat those rules and the hero splits into two
- * visibly different photos.
- */
 export function SiteFrame({
   media,
   children,
   action,
   compactNav = false,
+  bgPhoto,
 }: {
   media: React.ReactNode;
   children: React.ReactNode;
   action?: React.ReactNode;
   compactNav?: boolean;
+  bgPhoto?: string | null;
 }) {
+  const [prevSlot, setPrevSlot] = useState<{ url: string; id: number } | null>(null);
+  const [currSlot, setCurrSlot] = useState<{ url: string; id: number } | null>(null);
+  const slotId = useRef(0);
+  const currRef = useRef<{ url: string; id: number } | null>(null);
+
+  useEffect(() => {
+    const prev = currRef.current;
+    const next = bgPhoto ? { url: bgPhoto, id: ++slotId.current } : null;
+    currRef.current = next;
+    setPrevSlot(prev);
+    setCurrSlot(next);
+    const t = setTimeout(() => setPrevSlot(null), 1450);
+    return () => clearTimeout(t);
+  }, [bgPhoto]);
+
+  const overlayBase: React.CSSProperties = {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    pointerEvents: "none",
+  };
+
   return (
     <div className="ground">
-      <div className="ground-media" aria-hidden>
-        {media}
-      </div>
+      <div className="ground-media" aria-hidden>{media}</div>
+
+      {prevSlot && (
+        <img
+          key={`prev-${prevSlot.id}`}
+          src={prevSlot.url}
+          alt=""
+          aria-hidden
+          style={{ ...overlayBase, animation: "bg-photo-out 1.3s ease forwards" }}
+        />
+      )}
+      {currSlot && (
+        <img
+          key={`curr-${currSlot.id}`}
+          src={currSlot.url}
+          alt=""
+          aria-hidden
+          style={{ ...overlayBase, animation: "bg-photo-in 1.3s ease 0.15s forwards" }}
+        />
+      )}
 
       <div className="frame-wrap">
         <div className="frame">
@@ -47,11 +79,8 @@ export function SiteFrame({
               </Link>
             )}
           </div>
-
           <div className="panel">
-            <div className="panel-media" aria-hidden>
-              {media}
-            </div>
+            <div className="panel-media" aria-hidden>{media}</div>
             <div className="panel-scrim" aria-hidden />
             <div className="panel-content">{children}</div>
           </div>
@@ -82,26 +111,16 @@ function seeded(seed: number) {
   };
 }
 
-/**
- * CampusGround — the stand-in for the campus photograph the design system
- * expects. Three receding bands of buildings, drawn once and deterministically.
- *
- * To use a real photo instead: drop a wide image at public/campus.jpg and pass
- * <GroundPhoto src="/campus.jpg" /> as the `media` prop of SiteFrame. Use a
- * wide crop; it is laid out at its natural aspect and anchored to the bottom.
- */
 export function CampusGround({ seed = "dormcheck" }: { seed?: string }) {
   const rand = seeded(hashString(seed));
   const uid = `cg${hashString(seed).toString(36)}`;
-  // Buildings live in the bottom quarter only. The type sits on clean sky
-  // above them, the same way the reference photo carries its horizon low.
   const horizon = 458;
 
   type Band = { opacity: number; scale: number; windows: boolean };
   const bands: Band[] = [
     { opacity: 0.13, scale: 0.55, windows: false },
     { opacity: 0.24, scale: 0.78, windows: false },
-    { opacity: 0.5, scale: 1, windows: true },
+    { opacity: 0.5,  scale: 1,    windows: true  },
   ];
 
   return (
@@ -113,17 +132,17 @@ export function CampusGround({ seed = "dormcheck" }: { seed?: string }) {
     >
       <defs>
         <linearGradient id={`${uid}-sky`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#d7e5ff" />
-          <stop offset="52%" stopColor="#e9f1ff" />
+          <stop offset="0%"   stopColor="#d7e5ff" />
+          <stop offset="52%"  stopColor="#e9f1ff" />
           <stop offset="100%" stopColor="#f6faff" />
         </linearGradient>
         <radialGradient id={`${uid}-glow`} cx="0.7" cy="0.16" r="0.5">
-          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.85" />
+          <stop offset="0%"   stopColor="#ffffff" stopOpacity="0.85" />
           <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
         </radialGradient>
         <linearGradient id={`${uid}-lawn`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#c2d7f5" />
-          <stop offset="100%" stopColor="#dfeaFB" />
+          <stop offset="0%"   stopColor="#c2d7f5" />
+          <stop offset="100%" stopColor="#dfeafb" />
         </linearGradient>
       </defs>
 
@@ -144,47 +163,15 @@ export function CampusGround({ seed = "dormcheck" }: { seed?: string }) {
 
           shapes.push(<rect key={`b${bi}-${bx}`} x={bx} y={by} width={w} height={h} rx="2" />);
 
-          // Rooflines vary so the skyline reads as a campus, not a city block.
           if (roof > 0.86) {
-            // clock tower
             shapes.push(
-              <rect
-                key={`t${bi}-${bx}`}
-                x={bx + w / 2 - 11 * band.scale}
-                y={by - 40 * band.scale}
-                width={22 * band.scale}
-                height={40 * band.scale}
-                rx="2"
-              />
-            );
-            shapes.push(
-              <polygon
-                key={`s${bi}-${bx}`}
-                points={`${bx + w / 2 - 15 * band.scale},${by - 40 * band.scale} ${
-                  bx + w / 2
-                },${by - 64 * band.scale} ${bx + w / 2 + 15 * band.scale},${by - 40 * band.scale}`}
-              />
+              <rect key={`t${bi}-${bx}`} x={bx + w / 2 - 11 * band.scale} y={by - 40 * band.scale} width={22 * band.scale} height={40 * band.scale} rx="2" />,
+              <polygon key={`s${bi}-${bx}`} points={`${bx + w / 2 - 15 * band.scale},${by - 40 * band.scale} ${bx + w / 2},${by - 64 * band.scale} ${bx + w / 2 + 15 * band.scale},${by - 40 * band.scale}`} />
             );
           } else if (roof > 0.62) {
-            // gable
-            shapes.push(
-              <polygon
-                key={`g${bi}-${bx}`}
-                points={`${bx - 3},${by} ${bx + w / 2},${by - 22 * band.scale} ${bx + w + 3},${by}`}
-              />
-            );
+            shapes.push(<polygon key={`g${bi}-${bx}`} points={`${bx - 3},${by} ${bx + w / 2},${by - 22 * band.scale} ${bx + w + 3},${by}`} />);
           } else if (roof > 0.42) {
-            // cornice
-            shapes.push(
-              <rect
-                key={`c${bi}-${bx}`}
-                x={bx - 5}
-                y={by - 7 * band.scale}
-                width={w + 10}
-                height={8 * band.scale}
-                rx="1.5"
-              />
-            );
+            shapes.push(<rect key={`c${bi}-${bx}`} x={bx - 5} y={by - 7 * band.scale} width={w + 10} height={8 * band.scale} rx="1.5" />);
           }
 
           if (band.windows) {
@@ -211,7 +198,6 @@ export function CampusGround({ seed = "dormcheck" }: { seed?: string }) {
               }
             }
           }
-
           cursor += w + (6 + rand() * 26) * band.scale;
         }
 
@@ -222,11 +208,9 @@ export function CampusGround({ seed = "dormcheck" }: { seed?: string }) {
         );
       })}
 
-      {/* lawn */}
       <rect x="0" y={horizon} width="1200" height={500 - horizon} fill={`url(#${uid}-lawn)`} />
       <rect x="0" y={horizon} width="1200" height="2" fill="#1f45c4" opacity="0.14" />
 
-      {/* planting along the horizon, small enough to stay scenery */}
       {Array.from({ length: 14 }).map((_, i) => {
         const tx = 20 + i * 88 + rand() * 40;
         const tr = 10 + rand() * 11;
@@ -241,14 +225,7 @@ export function CampusGround({ seed = "dormcheck" }: { seed?: string }) {
   );
 }
 
-/** Real photograph as the page ground, once one exists. */
 export function GroundPhoto({ src, alt = "" }: { src: string; alt?: string }) {
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt={alt}
-      style={{ display: "block" }}
-    />
-  );
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt={alt} style={{ display: "block" }} />;
 }
